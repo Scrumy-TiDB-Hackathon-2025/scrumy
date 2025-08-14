@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ScrumBot - Meeting Capture</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 500px;
+      margin: 50px auto;
+      padding: 30px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border-radius: 12px;
+      text-align: center;
+    }
+    
+    .logo {
+      font-size: 48px;
+      margin-bottom: 20px;
+    }
+    
+    h1 {
+      margin-bottom: 10px;
+      font-size: 24px;
+    }
+    
+    .subtitle {
+      opacity: 0.9;
+      margin-bottom: 30px;
+      font-size: 16px;
+    }
+    
+    .instructions {
+      background: rgba(255,255,255,0.1);
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 30px;
+      text-align: left;
+    }
+    
+    .step {
+      margin-bottom: 15px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .step-number {
+      background: rgba(255,255,255,0.2);
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: bold;
+      flex-shrink: 0;
+    }
+    
+    #captureBtn {
+      background: #fff;
+      color: #333;
+      border: none;
+      padding: 15px 30px;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-bottom: 20px;
+    }
+    
+    #captureBtn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+    
+    #captureBtn:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+      transform: none;
+    }
+    
+    .status {
+      margin-top: 20px;
+      padding: 10px;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+    
+    .status.success {
+      background: rgba(16, 185, 129, 0.2);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    
+    .status.error {
+      background: rgba(239, 68, 68, 0.2);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    
+    .status.info {
+      background: rgba(59, 130, 246, 0.2);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+    
+    .close-info {
+      margin-top: 20px;
+      font-size: 12px;
+      opacity: 0.8;
+    }
+  </style>
+</head>
+<body>
+  <div class="logo">🤖</div>
+  <h1>ScrumBot Meeting Capture</h1>
+  <div class="subtitle">Select your meeting tab to start recording</div>
+  
+  <div class="instructions">
+    <div class="step">
+      <div class="step-number">1</div>
+      <div>Click the "Select Meeting Tab" button below</div>
+    </div>
+    <div class="step">
+      <div class="step-number">2</div>
+      <div>Choose your <strong>meeting tab</strong> from the sharing dialog</div>
+    </div>
+    <div class="step">
+      <div class="step-number">3</div>
+      <div>Make sure <strong>"Also share tab audio"</strong> is enabled</div>
+    </div>
+    <div class="step">
+      <div class="step-number">4</div>
+      <div>Click <strong>"Share"</strong> to start recording</div>
+    </div>
+  </div>
+  
+  <button id="captureBtn">📹 Select Meeting Tab</button>
+  
+  <div id="status" class="status" style="display: none;"></div>
+  
+  <div class="close-info">
+    This tab will automatically close when recording starts
+  </div>
+
+  <script src="config.js"></script>
+  <script src="core/audiocapture.js"></script>
+  <script src="services/websocketclient.js"></script>
+  <script src="capture.js"></script>
+</body>
+</html>

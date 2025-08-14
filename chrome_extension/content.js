@@ -1,0 +1,702 @@
+console.log('🤖 ScrumBot extension loaded on:', window.location.href);
+
+// Wait for config to load
+if (typeof window.SCRUMBOT_CONFIG === 'undefined') {
+  console.error('❌ ScrumBot config not loaded');
+}
+
+const config = window.SCRUMBOT_CONFIG;
+const BACKEND_URL = config.BACKEND_URL;
+const FRONTEND_URL = config.FRONTEND_URL;
+const ENDPOINTS = config.ENDPOINTS;
+
+let meetingId = null;
+
+// Check if we're on a supported meeting platform
+const currentPlatform = config.SUPPORTED_PLATFORMS.find(platform =>
+  window.location.href.includes(platform)
+);
+
+if (currentPlatform) {
+  console.log('✅ ScrumBot: Supported platform detected:', currentPlatform);
+  initializeScrumBot();
+} else {
+  console.log('❌ ScrumBot: Unsupported platform');
+}
+
+function initializeScrumBot() {
+  // Generate unique meeting ID
+  meetingId = 'meeting-' + Date.now() + '-' + Math.random().toString(36).substring(2, 11);
+  console.log('📝 Meeting ID:', meetingId);
+
+  // Create enhanced ScrumBot UI
+  createEnhancedScrumBotUI();
+
+  // Test backend connection
+  testBackendConnection();
+
+  // Wait for core controller to be initialized
+  setTimeout(() => {
+    if (window.scrumBotController) {
+      console.log('✅ ScrumBot controller initialized');
+      setupEnhancedEventListeners();
+    } else {
+      console.error('❌ ScrumBot controller not found - checking components...');
+      console.log('Available components:', {
+        meetingDetector: !!window.meetingDetector,
+        audioCapture: !!window.scrumBotAudioCapture,
+        controller: !!window.scrumBotController,
+        ui: !!window.scrumBotUI
+      });
+    }
+  }, 1000);
+}
+
+function createEnhancedScrumBotUI() {
+  if (window.scrumBotUI) {
+    window.scrumBotUI.createEnhancedUI(meetingId);
+    console.log('✅ Enhanced ScrumBot UI created');
+    
+    // Make sure the enhanced UI buttons work with multi-tab recording
+    const toggleButton = document.getElementById('scrumbot-toggle');
+    if (toggleButton) {
+      // Override the button text for enhanced mode
+      toggleButton.innerHTML = '▶️ Start Enhanced Recording';
+    }
+  } else {
+    console.error('❌ ScrumBot UI component not available');
+    // Fallback to basic UI
+    createScrumBotUI();
+  }
+}
+
+function setupEnhancedEventListeners() {
+  // Listen for UI events
+  window.addEventListener('scrumbot-toggle-recording', () => {
+    toggleRecording();
+  });
+  
+  window.addEventListener('scrumbot-open-dashboard', () => {
+    openDashboard();
+  });
+  
+  window.addEventListener('scrumbot-test-api', () => {
+    testAPI();
+  });
+  
+  window.addEventListener('scrumbot-debug', () => {
+    debugComponents();
+  });
+  
+  // Listen for transcription updates
+  window.addEventListener('scrumbot-transcription', (event) => {
+    if (window.scrumBotUI) {
+      window.scrumBotUI.addTranscript(event.detail);
+    }
+  });
+  
+  // Listen for speaker attribution
+  window.addEventListener('scrumbot-speaker-attribution', (event) => {
+    if (window.scrumBotUI) {
+      window.scrumBotUI.updateSpeakerAttribution(event.detail);
+    }
+  });
+  
+  // Listen for meeting analysis
+  window.addEventListener('scrumbot-meeting-analysis', (event) => {
+    if (window.scrumBotUI) {
+      window.scrumBotUI.updateMeetingAnalysis(event.detail);
+    }
+  });
+  
+  // Listen for participant changes
+  window.addEventListener('scrumbot-participant-change', (event) => {
+    if (window.scrumBotUI) {
+      window.scrumBotUI.updateParticipants(event.detail.participants);
+    }
+  });
+}
+
+function createScrumBotUI() {
+  // Remove existing panel if it exists
+  const existingPanel = document.getElementById('scrumbot-panel');
+  if (existingPanel) {
+    existingPanel.remove();
+  }
+
+  // Create floating ScrumBot control panel
+  const scrumBotPanel = document.createElement('div');
+  scrumBotPanel.id = 'scrumbot-panel';
+  scrumBotPanel.innerHTML = `
+    <div style="
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 10000;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 15px;
+      border-radius: 12px;
+      box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-width: 280px;
+      backdrop-filter: blur(10px);
+    ">
+      <div style="display: flex; align-items: center; margin-bottom: 12px;">
+        <div style="
+          width: 32px;
+          height: 32px;
+          background: #fff;
+          border-radius: 8px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin-right: 10px;
+          font-size: 16px;
+        ">🤖</div>
+        <div>
+          <div style="font-weight: 600; font-size: 14px;">ScrumBot</div>
+          <div style="font-size: 11px; opacity: 0.8;" id="connection-status">Connecting...</div>
+        </div>
+      </div>
+      
+      <div style="margin-bottom: 12px;">
+        <div style="font-size: 12px; opacity: 0.9; margin-bottom: 5px;">Meeting ID:</div>
+        <div style="
+          background: rgba(255,255,255,0.2);
+          padding: 6px 8px;
+          border-radius: 6px;
+          font-family: monospace;
+          font-size: 11px;
+          word-break: break-all;
+        ">${meetingId}</div>
+      </div>
+      
+      <div style="margin-bottom: 10px; font-size: 11px; opacity: 0.8;">
+        Backend: ngrok tunnel ✅
+      </div>
+      
+      <button id="scrumbot-toggle" style="
+        width: 100%;
+        padding: 10px;
+        border: none;
+        border-radius: 8px;
+        background: #fff;
+        color: #333;
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 13px;
+        transition: all 0.2s ease;
+      ">
+        ▶️ Start Recording
+      </button>
+      
+      <div style="margin-top: 8px; display: flex; gap: 5px;">
+        <button id="scrumbot-dashboard" style="
+          flex: 1;
+          padding: 6px;
+          border: 1px solid rgba(255,255,255,0.3);
+          border-radius: 6px;
+          background: transparent;
+          color: white;
+          cursor: pointer;
+          font-size: 11px;
+        ">📊 Dashboard</button>
+        <button id="scrumbot-test" style="
+          flex: 1;
+          padding: 6px;
+          border: 1px solid rgba(255,255,255,0.3);
+          border-radius: 6px;
+          background: transparent;
+          color: white;
+          cursor: pointer;
+          font-size: 11px;
+        ">🧪 Test API</button>
+        <button id="scrumbot-debug" style="
+          flex: 1;
+          padding: 6px;
+          border: 1px solid rgba(255,255,255,0.3);
+          border-radius: 6px;
+          background: transparent;
+          color: white;
+          cursor: pointer;
+          font-size: 11px;
+        ">🔍 Debug</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(scrumBotPanel);
+
+  // Add event listeners
+  document.getElementById('scrumbot-toggle').addEventListener('click', toggleRecording);
+  document.getElementById('scrumbot-dashboard').addEventListener('click', openDashboard);
+  document.getElementById('scrumbot-test').addEventListener('click', testAPI);
+  document.getElementById('scrumbot-debug').addEventListener('click', debugComponents);
+}
+
+// Enhanced fetch function with ngrok support
+function apiCall(endpoint, options = {}) {
+  const defaultOptions = {
+    headers: {
+      'Content-Type': 'application/json',
+      'ngrok-skip-browser-warning': 'true',  // Add ngrok bypass header
+      ...options.headers
+    }
+  };
+
+  return fetch(`${BACKEND_URL}${endpoint}`, {
+    ...options,
+    ...defaultOptions
+  });
+}
+
+function testBackendConnection() {
+  const statusElement = document.getElementById('connection-status');
+
+  apiCall(ENDPOINTS.health)
+    .then(response => response.json())
+    .then(data => {
+      if (data.status === 'healthy') {
+        statusElement.textContent = '🟢 Connected';
+        statusElement.style.color = '#4ade80';
+      } else {
+        statusElement.textContent = '🟡 Backend Issues';
+        statusElement.style.color = '#fbbf24';
+      }
+    })
+    .catch(error => {
+      console.error('❌ Backend connection failed:', error);
+      statusElement.textContent = '🔴 Offline';
+      statusElement.style.color = '#f87171';
+    });
+}
+
+// Multi-tab capture state
+let helperTabId = null;
+let isRecordingViaHelper = false;
+
+async function toggleRecording() {
+  if (!isRecordingViaHelper) {
+    // Start enhanced recording
+    await startEnhancedRecording();
+  } else {
+    // Stop enhanced recording
+    stopEnhancedRecording();
+  }
+}
+
+async function startEnhancedRecording() {
+  console.log('🎬 Starting enhanced recording with participant detection...');
+  
+  // Get UI elements (fallback to enhanced UI or basic UI)
+  const button = document.getElementById('scrumbot-toggle');
+  const statusElement = document.getElementById('connection-status');
+  
+  if (!button || !statusElement) {
+    console.error('❌ UI elements not found');
+    return;
+  }
+  
+  // Update UI to show we're starting
+  button.innerHTML = '⏳ Detecting participants...';
+  button.disabled = true;
+  statusElement.textContent = '🔍 Detecting meeting participants...';
+  
+  try {
+    // Start participant monitoring if available
+    if (window.meetingDetector && !window.meetingDetector.isMonitoringParticipants) {
+      await window.meetingDetector.startParticipantMonitoring();
+    }
+    
+    // Get participant info for enhanced context
+    const participants = window.meetingDetector?.getParticipants() || [];
+    console.log('👥 Detected participants:', participants.length);
+    
+    // Update UI with participant info
+    if (window.scrumBotUI) {
+      window.scrumBotUI.updateParticipants(participants);
+    }
+    
+    // Use the proven multi-tab recording approach
+    // Update the message to include participant context
+    chrome.runtime.sendMessage({
+      type: 'CREATE_HELPER_TAB',
+      meetingTabId: chrome.runtime.id,
+      enhancedMode: true, // Flag for enhanced features
+      meetingId: meetingId,
+      participants: participants // Include participant context
+    }, (response) => {
+      if (response && response.success) {
+        helperTabId = response.tabId;
+        console.log('✅ Enhanced helper tab opened:', helperTabId);
+        
+        // Update status
+        statusElement.textContent = `📹 Select your meeting tab (${participants.length} participants detected)`;
+        button.innerHTML = '⏳ Waiting for capture...';
+      } else {
+        console.error('❌ Failed to create enhanced helper tab:', response?.error);
+        
+        // Reset UI on failure
+        button.innerHTML = '▶️ Start Enhanced Recording';
+        button.disabled = false;
+        statusElement.textContent = '❌ Failed to open capture tab';
+        
+        alert('Failed to open capture tab. Please try again.');
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Enhanced recording failed:', error);
+    
+    // Reset UI on failure
+    button.innerHTML = '▶️ Start Enhanced Recording';
+    button.disabled = false;
+    statusElement.textContent = '❌ Failed to start recording';
+    
+    // Fallback to basic multi-tab recording
+    console.log('🔄 Falling back to basic multi-tab recording...');
+    startMultiTabRecording(button, statusElement);
+  }
+}
+
+function stopEnhancedRecording() {
+  console.log('⏹️ Stopping enhanced recording...');
+  
+  // Get UI elements
+  const button = document.getElementById('scrumbot-toggle');
+  const statusElement = document.getElementById('connection-status');
+  
+  // Stop participant monitoring
+  if (window.meetingDetector && window.meetingDetector.isMonitoringParticipants) {
+    window.meetingDetector.stopParticipantMonitoring();
+  }
+  
+  // Use the proven multi-tab stop approach
+  if (helperTabId) {
+    chrome.runtime.sendMessage({
+      type: 'MEETING_TO_HELPER',
+      messageType: 'STOP_RECORDING',
+      targetTabId: helperTabId
+    });
+  }
+  
+  // Reset UI
+  if (button && statusElement) {
+    button.innerHTML = '▶️ Start Enhanced Recording';
+    button.style.background = '#fff';
+    button.style.color = '#333';
+    button.disabled = false;
+    statusElement.textContent = '🟢 Connected';
+  }
+  
+  // Update enhanced UI if available
+  if (window.scrumBotUI) {
+    window.scrumBotUI.updateRecordingState(false, 0);
+    window.scrumBotUI.updateParticipants([]);
+  }
+  
+  isRecordingViaHelper = false;
+  helperTabId = null;
+  
+  testBackendConnection(); // Reset status
+}
+
+function startMultiTabRecording(button, statusElement) {
+  console.log('🎬 Starting multi-tab recording...');
+  
+  // Update UI to show we're starting
+  button.innerHTML = '⏳ Opening capture...';
+  button.disabled = true;
+  statusElement.textContent = '🔄 Opening capture tab...';
+  
+  // Send message to background script to create helper tab
+  chrome.runtime.sendMessage({
+    type: 'CREATE_HELPER_TAB',
+    meetingTabId: chrome.runtime.id
+  }, (response) => {
+    if (response && response.success) {
+      helperTabId = response.tabId;
+      console.log('✅ Helper tab opened:', helperTabId);
+      
+      // Update status
+      statusElement.textContent = '📹 Select your meeting tab in the new window';
+      button.innerHTML = '⏳ Waiting for capture...';
+    } else {
+      console.error('❌ Failed to create helper tab:', response?.error);
+      
+      // Reset UI on failure
+      button.innerHTML = '▶️ Start Recording';
+      button.disabled = false;
+      statusElement.textContent = '❌ Failed to open capture tab';
+      
+      alert('Failed to open capture tab. Please try again.');
+    }
+  });
+}
+
+function stopMultiTabRecording(button, statusElement) {
+  console.log('⏹️ Stopping multi-tab recording...');
+  
+  // Send stop message to helper tab via background script
+  if (helperTabId) {
+    chrome.runtime.sendMessage({
+      type: 'MEETING_TO_HELPER',
+      messageType: 'STOP_RECORDING',
+      targetTabId: helperTabId
+    });
+  }
+  
+  // Reset UI
+  button.innerHTML = '▶️ Start Recording';
+  button.style.background = '#fff';
+  button.style.color = '#333';
+  button.disabled = false;
+  isRecordingViaHelper = false;
+  helperTabId = null;
+  
+  testBackendConnection(); // Reset status
+}
+
+// Listen for messages from helper tab
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'HELPER_TO_MEETING') {
+    handleHelperMessage(message.messageType, message.data, sender);
+  }
+});
+
+function handleHelperMessage(messageType, data, sender) {
+  const button = document.getElementById('scrumbot-toggle');
+  const statusElement = document.getElementById('connection-status');
+  
+  console.log('[MultiTab] Helper message:', messageType, data);
+  
+  switch(messageType) {
+    case 'CAPTURE_STARTED':
+      if (data.success) {
+        // Recording started successfully
+        isRecordingViaHelper = true;
+        button.innerHTML = '⏹️ Stop Enhanced Recording';
+        button.style.background = '#ef4444';
+        button.style.color = 'white';
+        button.disabled = false;
+        
+        // Get participant count for enhanced status
+        const participants = window.meetingDetector?.getParticipants() || [];
+        statusElement.textContent = `🔴 Recording (${participants.length} participants)`;
+        
+        // Update enhanced UI if available
+        if (window.scrumBotUI) {
+          window.scrumBotUI.updateRecordingState(true, participants.length);
+          window.scrumBotUI.updateParticipants(participants);
+        }
+        
+        console.log('✅ Enhanced multi-tab recording started with', participants.length, 'participants');
+        createEnhancedMeeting(participants); // Create enhanced meeting record
+      }
+      break;
+      
+    case 'CAPTURE_FAILED':
+      // Recording failed
+      button.innerHTML = '▶️ Start Enhanced Recording';
+      button.style.background = '#fff';
+      button.style.color = '#333';
+      button.disabled = false;
+      statusElement.textContent = '❌ Capture failed';
+      
+      // Update enhanced UI if available
+      if (window.scrumBotUI) {
+        window.scrumBotUI.updateRecordingState(false, 0);
+        window.scrumBotUI.updateConnectionStatus('error', '❌ Capture failed');
+      }
+      
+      console.error('❌ Enhanced multi-tab recording failed:', data.error);
+      alert(`Recording failed: ${data.error}\n\nPlease try again and make sure to:\n1. Select your meeting tab\n2. Enable "Also share tab audio"\n3. Click "Share"`);
+      break;
+      
+    case 'CAPTURE_STOPPED':
+      // Recording stopped
+      isRecordingViaHelper = false;
+      helperTabId = null;
+      button.innerHTML = '▶️ Start Enhanced Recording';
+      button.style.background = '#fff';
+      button.style.color = '#333';
+      button.disabled = false;
+      testBackendConnection();
+      
+      console.log('✅ Multi-tab recording stopped');
+      break;
+      
+    case 'AUDIO_DATA':
+      // Forward audio data to backend (already handled by helper tab)
+      console.log('[MultiTab] Audio data received:', data.audioData.length, 'bytes');
+      break;
+  }
+}
+
+function createMeeting() {
+  const meetingData = {
+    meeting_title: `${currentPlatform} Meeting - ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,
+    transcripts: [{
+      id: meetingId,
+      text: `Meeting started on ${currentPlatform} at ${new Date().toISOString()}`,
+      timestamp: new Date().toISOString()
+    }]
+  };
+
+  apiCall(ENDPOINTS.saveTranscript, {
+    method: 'POST',
+    body: JSON.stringify(meetingData)
+  })
+    .then(response => response.json())
+    .then(data => {
+      console.log('✅ Meeting created:', data);
+    })
+    .catch(error => {
+      console.error('❌ Failed to create meeting:', error);
+    });
+}
+
+function createEnhancedMeeting(participants) {
+  const meetingData = {
+    meeting_title: `${currentPlatform} Meeting - ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,
+    meeting_id: meetingId,
+    platform: currentPlatform,
+    participants: participants,
+    transcripts: [{
+      id: meetingId,
+      text: `Enhanced meeting started on ${currentPlatform} with ${participants.length} participants at ${new Date().toISOString()}`,
+      timestamp: new Date().toISOString()
+    }]
+  };
+
+  apiCall(ENDPOINTS.saveTranscript, {
+    method: 'POST',
+    body: JSON.stringify(meetingData)
+  })
+    .then(response => response.json())
+    .then(data => {
+      console.log('✅ Enhanced meeting created:', data);
+      console.log('👥 Participants:', participants.map(p => p.name).join(', '));
+    })
+    .catch(error => {
+      console.error('❌ Failed to create enhanced meeting:', error);
+    });
+}
+
+function sendAudioData(transcriptText) {
+  const transcriptData = {
+    meeting_title: `${currentPlatform} Meeting - ${meetingId}`,
+    transcripts: [{
+      id: `${meetingId}-${Date.now()}`,
+      text: transcriptText,
+      timestamp: new Date().toISOString()
+    }]
+  };
+
+  apiCall(ENDPOINTS.saveTranscript, {
+    method: 'POST',
+    body: JSON.stringify(transcriptData)
+  })
+    .then(response => response.json())
+    .then(data => {
+      console.log('✅ Transcript sent:', data);
+    })
+    .catch(error => {
+      console.error('❌ Failed to send transcript:', error);
+    });
+}
+
+function openDashboard() {
+  window.open(FRONTEND_URL, '_blank');
+}
+
+function testAPI() {
+  console.log('🧪 Testing API connection...');
+
+  // Test multiple endpoints with ngrok support
+  Promise.all([
+    apiCall(ENDPOINTS.health),
+    apiCall(ENDPOINTS.getMeetings)
+  ])
+    .then(responses => Promise.all(responses.map(r => r.json())))
+    .then(([healthData, meetingsData]) => {
+      console.log('✅ API Tests successful:', { healthData, meetingsData });
+      alert(`✅ API Test Success!
+Backend: ${healthData.status}
+Meetings: ${Array.isArray(meetingsData) ? meetingsData.length : 'N/A'} found
+URL: ${BACKEND_URL}
+🚀 ngrok tunnel working!`);
+    })
+    .catch(error => {
+      console.error('❌ API Test failed:', error);
+      alert(`❌ API Test Failed!
+Error: ${error.message}
+Backend: ${BACKEND_URL}
+Check browser console for details.`);
+    });
+}
+
+function debugComponents() {
+  console.log('🔍 Debug Components Status:');
+  
+  const status = {
+    config: !!window.SCRUMBOT_CONFIG,
+    meetingDetector: !!window.meetingDetector,
+    audioCapture: !!window.scrumBotAudioCapture,
+    webSocket: !!window.scrumBotWebSocket,
+    controller: !!window.scrumBotController
+  };
+  
+  console.log('Component Status:', status);
+  
+  if (window.SCRUMBOT_CONFIG) {
+    console.log('Config:', {
+      environment: window.SCRUMBOT_CONFIG.ENVIRONMENT,
+      backend: window.SCRUMBOT_CONFIG.BACKEND_URL,
+      websocket: window.SCRUMBOT_CONFIG.WEBSOCKET_URL,
+      debug: window.SCRUMBOT_CONFIG.DEBUG
+    });
+  }
+  
+  if (window.meetingDetector) {
+    console.log('Meeting Detector:', {
+      platform: window.meetingDetector.platform,
+      isInMeeting: window.meetingDetector.isInMeeting
+    });
+  }
+  
+  if (window.scrumBotController) {
+    console.log('Controller:', {
+      isRecording: window.scrumBotController.isRecording,
+      hasDetector: !!window.scrumBotController.detector,
+      hasAudioCapture: !!window.scrumBotController.audioCapture
+    });
+  }
+  
+  // Test audio capture directly
+  if (window.scrumBotAudioCapture) {
+    console.log('Testing audio capture directly...');
+    window.scrumBotAudioCapture.startCapture().then(success => {
+      console.log('Direct audio capture test:', success ? '✅ Success' : '❌ Failed');
+      if (success) {
+        setTimeout(() => {
+          window.scrumBotAudioCapture.stopCapture();
+          console.log('Direct audio capture stopped');
+        }, 3000);
+      }
+    });
+  }
+  
+  alert('Debug info logged to console. Check the console for details.');
+}
+
+
+
+// Auto-refresh connection status
+setInterval(() => {
+  if (window.scrumBotController && !window.scrumBotController.isRecording) {
+    testBackendConnection();
+  }
+}, 30000);
+

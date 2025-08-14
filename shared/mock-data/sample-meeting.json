@@ -1,0 +1,187 @@
+{
+  "meeting": {
+    "id": "meeting_sample_001",
+    "title": "Sprint Planning - Q1 2025",
+    "platform": "google-meet",
+    "created_at": "2025-01-08T10:00:00Z",
+    "updated_at": "2025-01-08T11:30:00Z"
+  },
+  "transcripts": [
+    {
+      "id": "transcript_001",
+      "meeting_id": "meeting_sample_001",
+      "text": "Good morning everyone, let's start our sprint planning meeting.",
+      "timestamp": "2025-01-08T10:00:00Z",
+      "speaker": "John Smith",
+      "confidence": 0.95
+    },
+    {
+      "id": "transcript_002",
+      "meeting_id": "meeting_sample_001",
+      "text": "Thanks John. I've prepared the backlog items for review.",
+      "timestamp": "2025-01-08T10:00:30Z",
+      "speaker": "Sarah Johnson",
+      "confidence": 0.92
+    },
+    {
+      "id": "transcript_003",
+      "meeting_id": "meeting_sample_001",
+      "text": "Great. Let's prioritize the user authentication feature first.",
+      "timestamp": "2025-01-08T10:01:00Z",
+      "speaker": "Mike Chen",
+      "confidence": 0.88
+    }
+  ],
+  "speakers": {
+    "speakers": [
+      {
+        "id": "speaker_1",
+        "name": "John Smith",
+        "segments": ["Good morning everyone, let's start our sprint planning meeting."],
+        "total_words": 10,
+        "characteristics": "Meeting facilitator, clear speaking style"
+      },
+      {
+        "id": "speaker_2",
+        "name": "Sarah Johnson",
+        "segments": ["Thanks John. I've prepared the backlog items for review."],
+        "total_words": 9,
+        "characteristics": "Product owner, organized approach"
+      },
+      {
+        "id": "speaker_3",
+        "name": "Mike Chen",
+        "segments": ["Great. Let's prioritize the user authentication feature first."],
+        "total_words": 8,
+        "characteristics": "Technical lead, decisive communication"
+      }
+    ],
+    "confidence": 0.92,
+    "total_speakers": 3,
+    "identification_method": "explicit_labels"
+  },
+  "summary": {
+    "meeting_id": "meeting_sample_001",
+    "meeting_title": "Sprint Planning - Q1 2025",
+    "executive_summary": {
+      "overview": "Team conducted sprint planning for Q1 2025, focusing on user authentication and core features.",
+      "key_outcomes": [
+        "Prioritized user authentication feature",
+        "Defined sprint goals and timeline",
+        "Assigned initial tasks to team members"
+      ],
+      "business_impact": "Critical foundation for user management system",
+      "urgency_level": "high",
+      "follow_up_required": true
+    },
+    "key_decisions": {
+      "decisions": [
+        {
+          "decision": "Prioritize user authentication feature for this sprint",
+          "rationale": "Foundation requirement for other user-facing features",
+          "impact": "Affects all subsequent user-related development",
+          "timeline": "Complete by end of sprint",
+          "confidence": 0.95
+        }
+      ],
+      "total_decisions": 1,
+      "consensus_level": "unanimous"
+    },
+    "discussion_topics": {
+      "topics": [
+        {
+          "topic": "User Authentication Implementation",
+          "category": "technical",
+          "discussion_depth": "extensive",
+          "resolution_status": "resolved",
+          "key_points": [
+            "OAuth 2.0 integration required",
+            "Support for Google and GitHub providers",
+            "Security considerations discussed"
+          ]
+        }
+      ],
+      "primary_focus": "Sprint planning and task prioritization",
+      "topic_distribution": {
+        "technical": 70,
+        "planning": 30
+      }
+    },
+    "next_steps": {
+      "next_steps": [
+        {
+          "action": "Implement OAuth 2.0 authentication",
+          "owner": "Mike Chen",
+          "deadline": "2025-01-15",
+          "priority": "high",
+          "dependencies": ["API design approval"]
+        },
+        {
+          "action": "Review authentication flow designs",
+          "owner": "Sarah Johnson",
+          "deadline": "2025-01-12",
+          "priority": "medium",
+          "dependencies": []
+        }
+      ],
+      "next_meeting": {
+        "scheduled": true,
+        "date": "2025-01-15T10:00:00Z",
+        "purpose": "Sprint review and retrospective"
+      },
+      "total_actions": 2
+    },
+    "participants": {
+      "participants": [
+        {
+          "name": "John Smith",
+          "role": "Scrum Master",
+          "participation_level": "high",
+          "key_contributions": ["Meeting facilitation", "Timeline management"]
+        },
+        {
+          "name": "Sarah Johnson",
+          "role": "Product Owner",
+          "participation_level": "high",
+          "key_contributions": ["Backlog preparation", "Requirements clarification"]
+        },
+        {
+          "name": "Mike Chen",
+          "role": "Tech Lead",
+          "participation_level": "medium",
+          "key_contributions": ["Technical guidance", "Task estimation"]
+        }
+      ],
+      "meeting_leader": "John Smith",
+      "total_participants": 3,
+      "participation_balance": "balanced"
+    },
+    "summary_generated_at": "2025-01-08T11:30:00Z"
+  },
+  "tasks": [
+    {
+      "id": "task_001",
+      "meeting_id": "meeting_sample_001",
+      "title": "Implement OAuth 2.0 authentication",
+      "description": "Set up OAuth 2.0 flow with Google and GitHub providers for user authentication",
+      "assignee": "Mike Chen",
+      "due_date": "2025-01-15",
+      "priority": "high",
+      "status": "pending",
+      "category": "action_item",
+      "created_at": "2025-01-08T11:30:00Z"
+    },
+    {
+      "id": "task_002",
+      "meeting_id": "meeting_sample_001",
+      "title": "Review authentication flow designs",
+      "description": "Review and approve the proposed user authentication flow and UI mockups",
+      "assignee": "Sarah Johnson",
+      "due_date": "2025-01-12",
+      "priority": "medium",
+      "status": "pending",
+      "category": "follow_up",
+      "created_at": "2025-01-08T11:30:00Z"
+    }
+  ]
+}

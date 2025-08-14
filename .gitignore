@@ -1,0 +1,279 @@
+# ================================
+# SCRUMY PROJECT .GITIGNORE
+# Based on actual project structure scan
+# ================================
+
+# ----------------
+# Python Backend (AI Processing)
+# ----------------
+ai_processing/__pycache__/
+ai_processing/app/__pycache__/
+ai_processing/venv/
+ai_processing/*.pyc
+ai_processing/*.pyo
+ai_processing/*.pyd
+ai_processing/.Python
+ai_processing/env/
+ai_processing/.env
+ai_processing/.venv
+ai_processing/ENV/
+ai_processing/env.bak/
+ai_processing/venv.bak/
+
+# Database files (from scan)
+ai_processing/meetily.db
+ai_processing/meeting_minutes.db
+ai_processing/*.db
+ai_processing/*.sqlite*
+
+# Backend logs
+ai_processing/*.log
+ai_processing/debug_cors.py
+
+# ----------------
+# Whisper.cpp (AI Processing)
+# ----------------
+# Large model files (found in scan)
+ai_processing/whisper.cpp/models/*.bin
+ai_processing/whisper.cpp/models/*.ggml
+ai_processing/whisper.cpp/models/for-tests-*.bin
+ai_processing/whisper.cpp/models/for-tests-*.ggml
+ai_processing/whisper-server-package/models/*.bin
+
+# Whisper build artifacts (from scan)
+ai_processing/whisper.cpp/build/
+ai_processing/whisper.cpp/compile_commands.json
+
+# Audio samples (from scan)
+ai_processing/whisper.cpp/bindings/go/samples/*.wav
+ai_processing/whisper.cpp/samples/*.wav
+ai_processing/whisper.cpp/samples/*.mp3
+
+# ----------------
+# Frontend (Next.js Dashboard)
+# ----------------
+frontend_dashboard/node_modules/
+frontend_dashboard/.next/
+frontend_dashboard/out/
+frontend_dashboard/build/
+frontend_dashboard/dist/
+
+# Environment files
+frontend_dashboard/.env*.local
+frontend_dashboard/.env
+
+# Debug logs
+frontend_dashboard/npm-debug.log*
+frontend_dashboard/yarn-debug.log*
+frontend_dashboard/yarn-error.log*
+
+# Next.js cache
+frontend_dashboard/.next/cache/
+frontend_dashboard/.next/types/
+
+# ----------------
+# Chrome Extension
+# ----------------
+chrome_extension/node_modules/
+chrome_extension/dist/
+chrome_extension/build/
+chrome_extension/*.zip
+chrome_extension/*.crx
+chrome_extension/*.pem
+chrome_extension/web-ext-artifacts/
+
+# Extension utilities
+chrome_extension/download_server.py
+chrome_extension/*.sh
+
+# ----------------
+# Whisper Server Packages
+# ----------------
+frontend_dashboard/whisper-server-package/whisper-server
+ai_processing/whisper-server-package/
+
+# ----------------
+# Large Binary Files (from scan)
+# ----------------
+*.bin
+*.ggml
+*.model
+**/*.bin
+**/*.ggml
+
+# Large Node modules (from scan)
+**/node_modules/@next/swc-*/*.node
+**/node_modules/@img/sharp-*/*.so*
+**/node_modules/@tauri-apps/cli-*/*.node
+**/node_modules/@svgmoji/noto/sprites/all.svg
+
+# ----------------
+# Documentation & Media
+# ----------------
+# Keep assets/ directory but ignore large images if any
+assets/*.gif
+assets/*.jpg
+assets/*.png
+
+# Frontend icons (keep these)
+# frontend_dashboard/public/*.png
+# frontend_dashboard/public/*.ico
+
+# ----------------
+# Build & Compile Artifacts
+# ----------------
+# CMake (from whisper.cpp scan)
+**/CMakeFiles/
+**/cmake_install.cmake
+**/CMakeCache.txt
+**/Makefile
+compile_commands.json
+
+# TypeScript build info
+*.tsbuildinfo
+next-env.d.ts
+
+# ----------------
+# Development Tools
+# ----------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+
+# ----------------
+# Logs & Runtime
+# ----------------
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+lerna-debug.log*
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# ----------------
+# Security & Secrets
+# ----------------
+*.pem
+*.key
+*.crt
+.env
+.env.*
+!.env.example
+secrets.json
+**/*secret*
+**/*password*
+
+# SSL certificates (from scan)
+**/certifi/cacert.pem
+
+# ----------------
+# Package Managers
+# ----------------
+node_modules/
+package-lock.json.bak
+yarn.lock.bak
+
+# ----------------
+# Testing & Coverage
+# ----------------
+coverage/
+.nyc_output
+test-results/
+test-artifacts/
+
+# ----------------
+# Deployment
+# ----------------
+.vercel
+.railway
+.netlify
+
+# ----------------
+# Temporary Files
+# ----------------
+tmp/
+temp/
+.tmp/
+.temp/
+*.tmp
+*.temp
+*.backup
+*.bak
+*.old
+*.orig
+
+# ----------------
+# Specific to Your Project Structure
+# ----------------
+# Clean run scripts (from scan)
+frontend_dashboard/clean_run_windows.bat
+
+# Webpack cache (from scan)  
+**/.next/cache/webpack/
+
+# PYC files in venv (from scan)
+**/lib/python*/site-packages/**/__pycache__/
+**/lib/python*/site-packages/**/*.pyc
+
+# ----------------
+# Archive & Compressed
+# ----------------
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Keep specific zips if needed
+!chrome_extension/extension-package.zip
+!assets/demo.zip
+
+
+# ----------------
+# Development Guides (Internal Use Only)
+# ----------------
+ScrumBot_Lab_Guide AWS-beginner.md
+Epic_A_Chrome_Extension_Guide.md
+Epic_B_AI_Processing_Guide.md
+Epic_C_MCP_Integration_Guide.md
+Epic_C_Tools_Integration_Guide.md
+Epic_C_Progressive_Tools_Integration_Guide.md
+Epic_D_Frontend_Deployment_Guide.md
+Team_Epic_Distribution.md
+External_Dependencies_Verification_Report.md
+TiDB_Integration_Summary.md
+Production_Deployment_Guide.md
+Project_Structure_Guide.md
+DEPLOYMENT_STRATEGY.md
+DEVELOPER_SETUP_GUIDE.md
+BACKEND_GAPS_ANALYSIS.md
+INTEGRATION_STRATEGY_ANALYSIS.md
+CLICKUP_INTEGRATION_SPEC.md
+PROGRESSIVE_INTEGRATION_LAB.md
+PROJECT_MANAGER_COMPREHENSIVE_GUIDE.md
+
+# ----------------
+# Integration Analysis Documents (Internal Use Only)
+# ----------------
+PARTICIPANT_DATA_INTEGRATION_ANALYSIS.md
+EPIC_AUGMENTATION_GUIDE.md
+
+# ----------------
+# Git History Cleanup (Internal Use Only)
+# ----------------
+GIT_HISTORY_CLEANUP_OPTIONS.md
+TARGETED_HISTORY_CLEANUP.md
+GIT_CLEANUP_TRACKER.md
+git_cleanup_script.sh

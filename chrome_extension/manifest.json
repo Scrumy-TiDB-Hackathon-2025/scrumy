@@ -1,0 +1,60 @@
+{
+  "manifest_version": 3,
+  "name": "ScrumBot Meeting Recorder",
+  "version": "1.0",
+  "description": "AI-powered meeting transcription for TiDB AgentX Hackathon 2025",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "tabs",
+    "storage",
+    "tabCapture"
+  ],
+  "host_permissions": [
+    "https://meet.google.com/*",
+    "https://zoom.us/*",
+    "https://teams.microsoft.com/*",
+    "https://*.ngrok-free.app/*",
+    "https://*.vercel.app/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://meet.google.com/*",
+        "https://zoom.us/*",
+        "https://teams.microsoft.com/*"
+      ],
+      "js": [
+        "config.js",
+        "ui-components.js",
+        "core/meetingdetector.js",
+        "core/audiocapture.js",
+        "services/websocketclient.js",
+        "core/scrumbotcontroller.js",
+        "content.js",
+        "test-controller.js",
+        "test-multitab.js"
+      ],
+      "run_at": "document_idle" 
+    }
+  ],
+  "background": {
+    "service_worker": "worker/background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "ScrumBot - AI Meeting Assistant"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "config.js",
+        "capture.html",
+        "capture.js",
+        "core/audiocapture.js",
+        "services/websocketclient.js"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

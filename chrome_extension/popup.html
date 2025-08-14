@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ScrumBot</title>
+  <style>
+    body {
+      width: 300px;
+      padding: 10px;
+      font-family: Arial, sans-serif;
+      background: #1a1a1a;
+      color: #e0e0e0;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 15px;
+    }
+    .logo {
+      font-size: 24px;
+      font-weight: bold;
+    }
+    .status {
+      padding: 10px;
+      margin-bottom: 15px;
+      border-radius: 5px;
+      text-align: center;
+    }
+    .status.connected { background: #10b981; color: #fff; }
+    .status.disconnected { background: #ef4444; color: #fff; }
+    .status.meeting { background: #3b82f6; color: #fff; }
+    .status.recording { background: #f97316; color: #fff; }
+    .status.no-meeting { background: #4b5563; color: #fff; }
+    .controls {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+    button {
+      padding: 10px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .start-btn { background: #10b981; color: #fff; }
+    .start-btn:disabled { background: #6b7280; cursor: not-allowed; }
+    .stop-btn { background: #ef4444; color: #fff; }
+    .stop-btn:disabled { background: #6b7280; cursor: not-allowed; }
+    .dashboard-btn, .test-btn {
+      background: #3b82f6;
+      color: #fff;
+    }
+    .dashboard-btn:disabled, .test-btn:disabled { background: #6b7280; cursor: not-allowed; }
+    .info {
+      font-size: 12px;
+      color: #6b7280;
+      line-height: 1.4;
+    }
+    .connection-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      margin-top: 10px;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+    .dot.connected { background: #10b981; }
+    .dot.disconnected { background: #ef4444; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">🤖 ScrumBot</div>
+    <div class="subheader">Meeting Transcription Assistant</div>
+  </div>
+
+  <div id="status" class="status no-meeting">
+    🔴 Checking connection...
+  </div>
+
+  <div class="controls">
+    <button id="startBtn" class="start-btn" disabled>Start Recording</button>
+    <button id="stopBtn" class="stop-btn" disabled>Stop Recording</button>
+    <button id="dashboard-btn" class="dashboard-btn">📊 Open Dashboard</button>
+    <button id="test-btn" class="test-btn">🧪 Test Connection</button>
+  </div>
+
+  <div class="info">
+    Navigate to Google Meet, Zoom, or Teams to start recording
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

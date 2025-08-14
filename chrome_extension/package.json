@@ -1,0 +1,28 @@
+{
+  "name": "scrumbot-chrome-extension",
+  "version": "1.0.0",
+  "description": "ScrumBot Chrome Extension for AI-powered meeting transcription",
+  "scripts": {
+    "dev": "node start-dev-servers.js",
+    "test": "node quick-test.js",
+    "test:full": "node run-all-tests.js",
+    "test:enhanced": "echo 'Load extension and run window.testEnhancedFeatures() in meeting tab'",
+    "test:ws": "node mocks/mockwebsocketserver.js",
+    "test:rest": "node mocks/mockrestserver.js",
+    "test:core": "node test/core.js",
+    "env:dev": "node switch-env.js dev",
+    "env:prod": "node switch-env.js prod"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {},
+  "keywords": [
+    "chrome-extension",
+    "meeting",
+    "transcription",
+    "ai"
+  ],
+  "author": "ScrumBot Team",
+  "license": "MIT"
+}
