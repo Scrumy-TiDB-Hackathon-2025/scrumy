@@ -1,19 +1,48 @@
-export default function MeetingCard({ title, date, description }) {
+import React from "react";
+
+export default function MeetingCard({ meetings = [], loading }) {
   return (
-    <div className="bg-white p-4 rounded-lg border mb-3 shadow-sm">
-      <div className="flex justify-between items-center mb-2">
-        <h3 className="font-semibold">{title}</h3>
-        <span className="text-gray-400 text-sm">{date}</span>
-      </div>
-      <p className="text-gray-500 text-sm mb-2">{description}</p>
-      <div className="flex space-x-2">
-        <button className="px-3 py-1 text-blue-500 border border-blue-500 rounded-full text-sm">
-          3 Action Items
-        </button>
-        <button className="px-3 py-1 text-gray-500 border rounded-full text-sm">
-          Transcript
-        </button>
-      </div>
+    <div className="bg-gray-50 rounded-lg shadow-sm p-4 mb-4">
+      <h2 className="text-lg font-semibold mb-3">Recent Meetings</h2>
+      {loading ? (
+        <div className="text-center py-3">
+          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="text-gray-500 mt-2 text-sm">Loading meetings...</p>
+        </div>
+      ) : meetings.length === 0 ? (
+        <div className="text-center py-6">
+          <div className="text-4xl mb-2">🎤</div>
+          <p className="text-gray-500 mb-2 text-sm">
+            No meetings yet. Start a meeting with the Chrome extension!
+          </p>
+          <div className="text-xs text-gray-400 space-y-1">
+            <p>📱 Install the Chrome extension</p>
+            <p>🎥 Join a Google Meet, Zoom, or Teams call</p>
+            <p>🎙️ Start recording to see transcripts here</p>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {meetings.map((meeting, index) => (
+            <div
+              key={meeting.id || index}
+              className="border border-gray-200 rounded p-3 hover:bg-gray-100"
+            >
+              <h3 className="font-medium text-gray-900">
+                {meeting.title || "Untitled Meeting"}
+              </h3>
+              <p className="text-xs text-gray-500">
+                {meeting.created_at || "Just created"}
+              </p>
+              {meeting.transcript && (
+                <p className="text-xs text-gray-700 mt-1 truncate">
+                  {meeting.transcript}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
