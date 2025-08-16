@@ -92,30 +92,6 @@ export default function Dashboard() {
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      {/* Sidebar
-      <aside className="w-64 bg-white border-r px-4 py-6">
-        <div className="mb-8">
-          <div className="h-8 w-8 bg-blue-600 rounded-sm"></div>
-        </div>
-        <nav className="space-y-4">
-          <a className="flex items-center text-blue-600 font-medium">
-            Home
-          </a>
-          <a className="flex items-center text-gray-600 hover:text-blue-600">
-            Project Trackers
-          </a>
-          <a className="flex items-center text-gray-600 hover:text-blue-600">
-            Meetings
-          </a>
-          <a className="flex items-center text-gray-600 hover:text-blue-600">
-            Action Items
-          </a>
-          <a className="flex items-center text-gray-600 hover:text-blue-600">
-            Integrate
-          </a>
-        </nav>
-      </aside> */}
-
       {/* Main content */}
       <main className="flex-1 p-8">
         <header className="mb-6 flex justify-between items-center">
