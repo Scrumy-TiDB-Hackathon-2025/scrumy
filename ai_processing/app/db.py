@@ -347,7 +347,7 @@ class DatabaseManager:
     async def get_model_config(self):
         """Get the current model configuration"""
         async with self._get_connection() as conn:
-            cursor = await conn.execute("SELECT provider, model, whisperModel FROM settings")
+            cursor = await conn.execute("SELECT provider, model, whisperModel FROM settings WHERE id = '1'")
             row = await cursor.fetchone()
             return dict(zip([col[0] for col in cursor.description], row)) if row else None
 
@@ -392,17 +392,23 @@ class DatabaseManager:
 
     async def get_api_key(self, provider: str):
         """Get the API key"""
-        provider_list = ["openai", "claude", "groq", "ollama"]
-        if provider not in provider_list:
+        provider_map = {
+            "openai": "openaiApiKey",
+            "claude": "anthropicApiKey",
+            "anthropic": "anthropicApiKey",
+            "groq": "groqApiKey",
+            "ollama": "ollamaApiKey"
+        }
+        provider_key = str(provider).lower()
+        api_key_name = provider_map.get(provider_key)
+        if not api_key_name:
+            # fallback: try to match partials (e.g., "string" -> "openaiApiKey" if "openai" in provider)
+            for k, v in provider_map.items():
+                if k in provider_key:
+                    api_key_name = v
+                    break
+        if not api_key_name:
             raise ValueError(f"Invalid provider: {provider}")
-        if provider == "openai":
-            api_key_name = "openaiApiKey"
-        elif provider == "claude":
-            api_key_name = "anthropicApiKey"
-        elif provider == "groq":
-            api_key_name = "groqApiKey"
-        elif provider == "ollama":
-            api_key_name = "ollamaApiKey"
         async with self._get_connection() as conn:
             cursor = await conn.execute(f"SELECT {api_key_name} FROM settings WHERE id = '1'")
             row = await cursor.fetchone()
@@ -424,6 +430,6 @@ class DatabaseManager:
         async with self._get_connection() as conn:
             await conn.execute(f"UPDATE settings SET {api_key_name} = NULL WHERE id = '1'")
             await conn.commit()
-            
-   
+
+
 
