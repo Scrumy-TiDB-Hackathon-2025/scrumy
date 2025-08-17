@@ -1,65 +1,8 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { Calendar, Users } from 'lucide-react';
-
-// Simple calendar popup for one month
-function CalendarPopup({ selectedDate, onSelect, onClose }) {
-  const popupRef = useRef(null);
-
-  useEffect(() => {
-    function handleClickOutside(event) {
-      if (popupRef.current && !popupRef.current.contains(event.target)) {
-        onClose();
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [onClose]);
-
-  const year = selectedDate.getFullYear();
-  const month = selectedDate.getMonth();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-
-  const daysArray = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-
-  return (
-    <div
-      ref={popupRef}
-      className="absolute z-10 mt-2 left-0 bg-white border border-gray-200 rounded-xl shadow-lg p-5"
-      style={{ minWidth: 240 }}
-    >
-      <div className="flex justify-between items-center mb-3">
-        <span className="font-bold text-lg text-gray-800">
-          {selectedDate.toLocaleString('default', { month: 'long' })} {year}
-        </span>
-        <button className="text-gray-400 hover:text-gray-700 text-xl" onClick={onClose}>✕</button>
-      </div>
-      <div className="grid grid-cols-7 gap-y-3 gap-x-2">
-        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(d => (
-          <div key={d} className="text-xs text-gray-400 text-center font-medium">{d}</div>
-        ))}
-        {Array(new Date(year, month, 1).getDay()).fill(null).map((_, i) => (
-          <div key={`empty-${i}`} />
-        ))}
-        {daysArray.map(day => {
-          const dateObj = new Date(year, month, day);
-          const isSelected = dateObj.toDateString() === selectedDate.toDateString();
-          return (
-            <button
-              key={day}
-              className={`w-7 h-7 rounded-full text-xs text-center flex items-center justify-center transition
-                ${isSelected ? 'bg-blue-600 text-white font-bold shadow' : 'hover:bg-blue-100 text-gray-700'}
-              `}
-              style={{ margin: '2px' }}
-              onClick={() => { onSelect(dateObj); onClose(); }}
-            >
-              {day}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
+import { DatePicker } from 'antd';
+import dayjs from "dayjs";
+import 'antd/dist/reset.css'; // Ensure Ant Design styles are loaded
 
 const CalendarSection = ({ upcomingMeetings }) => {
   const today = new Date();
@@ -67,15 +10,15 @@ const CalendarSection = ({ upcomingMeetings }) => {
   const [showCalendar, setShowCalendar] = useState(false);
   const iconRef = useRef(null);
 
-  // Generate a week range centered on today
+  // Generate a week range centered on selectedDate
   const generateWeekDays = () => {
     const days = [];
     for (let i = -3; i <= 3; i++) {
-      const date = new Date(today);
-      date.setDate(today.getDate() + i);
+      const date = new Date(selectedDate);
+      date.setDate(selectedDate.getDate() + i);
       days.push({
         date: date.getDate(),
-        isToday: i === 0,
+        isToday: date.toDateString() === today.toDateString(),
         fullDate: date.toISOString().slice(0, 10),
         isSelected: date.toDateString() === selectedDate.toDateString(),
       });
@@ -89,7 +32,16 @@ const CalendarSection = ({ upcomingMeetings }) => {
     setSelectedDate(new Date(day.fullDate));
   };
 
+  // Handler for Ant Design DatePicker
+  const handleDateChange = (date) => {
+    if (date) {
+      setSelectedDate(date.toDate());
+    }
+    setShowCalendar(false);
+  };
+
   return (
+    <div className="bg-white rounded-xl shadow border border-gray-100 px-6 py-4">
     <div className="mb-8 relative">
       <h2 className="text-xl font-semibold mb-4 text-black">Calendar</h2>
       
@@ -101,25 +53,31 @@ const CalendarSection = ({ upcomingMeetings }) => {
           <span className="font-medium text-black">
             {selectedDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
           </span>
-          {/* Calendar icon triggers popup */}
-          <button
-            ref={iconRef}
-            className="ml-2 p-2 rounded hover:bg-blue-100 relative"
-            onClick={() => setShowCalendar(v => !v)}
-            aria-label="Select date"
-            type="button"
-          >
-            <Calendar size={20} className="text-black" />
+          {/* Calendar icon triggers Ant Design DatePicker */}
+          <div className="ml-2 relative">
+            <button
+              ref={iconRef}
+              className="p-2 rounded hover:bg-blue-100"
+              onClick={() => setShowCalendar(v => !v)}
+              aria-label="Select date"
+              type="button"
+            >
+              <Calendar size={20} className="text-black" />
+            </button>
             {showCalendar && (
-              <div className="absolute left-0 top-full">
-                <CalendarPopup
-                  selectedDate={selectedDate}
-                  onSelect={setSelectedDate}
-                  onClose={() => setShowCalendar(false)}
+              <div className="absolute left-0 top-full z-10 mt-2">
+                <DatePicker
+                  open={true}
+                  onChange={handleDateChange}
+                  onOpenChange={setShowCalendar}
+                  value={dayjs(selectedDate)}
+                  style={{ minWidth: 220 }}
+                  getPopupContainer={node => node.parentNode}
+                  autoFocus
                 />
               </div>
             )}
-          </button>
+          </div>
         </div>
         
         <div className="flex items-center gap-4">
@@ -180,6 +138,7 @@ const CalendarSection = ({ upcomingMeetings }) => {
           {/* Empty card space */}
         </div>
       </div>
+    </div>
     </div>
   );
 };
