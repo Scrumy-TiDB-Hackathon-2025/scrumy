@@ -1,5 +1,5 @@
 import subprocess
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -7,17 +7,22 @@ import uvicorn
 from typing import Optional, List
 import logging
 from dotenv import load_dotenv
-from db import DatabaseManager
+from app.db import DatabaseManager
 import json
 from threading import Lock
-from transcript_processor import TranscriptProcessor
+from app.transcript_processor import TranscriptProcessor
 import time
+import os
+from app.integrated_processor import IntegratedAIProcessor
+
+# Import AIProcessor from its own module
+from app.ai_processor import AIProcessor
 
 # Import new tools functionality
 try:
-    from .tools_endpoints import router as tools_router
+    from app.tools_endpoints import router as tools_router
 except ImportError:
-    from tools_endpoints import router as tools_router
+    from app.tools_endpoints import router as tools_router
 
 # Load environment variables
 load_dotenv()
@@ -66,15 +71,38 @@ async def health_check():
     return {"status": "healthy"}
 
 @app.post("/transcribe")
-async def transcribe(audio: dict):
+async def transcribe(file: UploadFile = File(...)):
     try:
-        result = subprocess.run(['./whisper-server-package/main', '-m', './whisper-server-package/models/ggml-tiny.bin', '-t', audio['data']], capture_output=True, text=True)
-        conn = db.db
-        cursor = conn.cursor()
-        cursor.execute("CREATE TABLE IF NOT EXISTS transcripts (id INTEGER PRIMARY KEY, transcript TEXT)")
-        cursor.execute("INSERT INTO transcripts (transcript) VALUES (?)", (result.stdout,))
-        conn.commit()
+        whisper_executable = "./whisper-server-package/main"
+        model_path = './whisper-server-package/models/for-tests-ggml-tiny.en.bin'
+
+
+        # Check whisper executable + model exist
+        if not os.path.isfile(whisper_executable):
+            raise HTTPException(status_code=500, detail="Whisper executable not found")
+        if not os.path.isfile(model_path):
+            raise HTTPException(status_code=500, detail="Whisper model not found")
+
+        # Save uploaded file temporarily
+        temp_audio_path = f"temp_{file.filename}"
+        with open(temp_audio_path, "wb") as f:
+            f.write(await file.read())
+
+        # Run whisper
+        result = subprocess.run(
+            [whisper_executable, "-m", model_path, temp_audio_path, "-f", "json"],
+            capture_output=True,
+            text=True
+        )
+
+        # Clean up
+        os.remove(temp_audio_path)
+
+        if result.returncode != 0:
+            raise HTTPException(status_code=500, detail=result.stderr)
+
         return {"transcript": result.stdout}
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -124,6 +152,8 @@ class TranscriptRequest(BaseModel):
     meeting_id: str
     chunk_size: Optional[int] = 5000
     overlap: Optional[int] = 1000
+    platform: Optional[str] = None  
+    timestamp: Optional[str] = None 
 
 class SummaryProcessor:
     """Handles the processing of summaries in a thread-safe way"""
@@ -457,8 +487,16 @@ async def save_transcript(request: SaveTranscriptRequest):
 async def get_model_config():
     """Get the current model configuration"""
     model_config = await db.get_model_config()
+    if not model_config:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "status": "error",
+                "error": "No model configuration found"
+            }
+        )
     api_key = await db.get_api_key(model_config["provider"])
-    if api_key != None:
+    if api_key is not None:
         model_config["apiKey"] = api_key
     return model_config
 
@@ -470,6 +508,19 @@ async def save_model_config(request: SaveModelConfigRequest):
         await db.save_api_key(request.apiKey, request.provider)
     return {"status": "success", "message": "Model configuration saved successfully"}  
 
+@app.post("/process-complete-meeting")
+
+async def process_complete_meeting(request: TranscriptRequest):
+    """Process complete meeting with all AI features"""
+    integrated_processor = IntegratedAIProcessor()
+    meeting_context = {
+        "meeting_id": request.meeting_id,
+        "platform": request.platform,
+        "timestamp": request.timestamp
+
+    }
+    result = await integrated_processor.process_complete_meeting(request.text, meeting_context)
+    return result
 class GetApiKeyRequest(BaseModel):
     provider: str
 
