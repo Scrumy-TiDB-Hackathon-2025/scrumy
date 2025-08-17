@@ -255,4 +255,5 @@ class ClickUpIntegration:
                 pass  # Skip invalid dates
         
         # Add assignee if provided
-        if task.get("a
+        if task.get("assignee"):
+            payload["assignees"] = [task["assignee"]]
