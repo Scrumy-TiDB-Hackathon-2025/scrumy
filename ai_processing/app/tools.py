@@ -87,27 +87,53 @@ class ToolRegistry:
     async def create_task_everywhere(self, title: str, description: str, assignee: str = None,
                                    priority: str = "medium", due_date: str = None,
                                    meeting_id: str = None) -> Dict:
-        """Universal tool to create tasks in all available integrations"""
+        """Universal tool to create tasks in all available integrations with enhanced error handling"""
+        # Validate inputs
+        if not title:
+            return {"task_created": False, "error": "Title is required"}
+        
+        if priority not in ["low", "medium", "high", "urgent"]:
+            priority = "medium"  # Default to medium for invalid priorities
+        
         task_data = {
             "title": title,
-            "description": description,
+            "description": description or "",
             "assignee": assignee,
             "priority": priority,
             "due_date": due_date,
             "meeting_id": meeting_id
         }
         
-        logger.info(f"Creating task everywhere: {title}")
-        result = await self.integration_manager.create_task_all(task_data)
+        logger.info(f"Creating task everywhere: {title} (priority: {priority})")
+        result = await self.integration_manager.create_task_all(task_data, max_retries=2)
         
-        return {
+        # Enhanced response with detailed information
+        response = {
             "task_created": result["success"],
             "integrations_used": result["integrations_used"],
             "successful_integrations": result["successful_integrations"],
+            "total_integrations": result["total_integrations"],
             "results": result["results"],
             "title": title,
-            "assignee": assignee
+            "assignee": assignee,
+            "priority": priority
         }
+        
+        # Add specific integration URLs if available
+        urls = {}
+        for integration_name, integration_result in result["results"].items():
+            if integration_result.get("success"):
+                if integration_name == "notion" and integration_result.get("notion_url"):
+                    urls["notion"] = integration_result["notion_url"]
+                elif integration_name == "clickup" and integration_result.get("clickup_url"):
+                    urls["clickup"] = integration_result["clickup_url"]
+                elif integration_name == "slack" and integration_result.get("permalink"):
+                    urls["slack"] = integration_result["permalink"]
+        
+        if urls:
+            response["task_urls"] = urls
+        
+        return response
 
 # Global tool registry
 tools = ToolRegistry()

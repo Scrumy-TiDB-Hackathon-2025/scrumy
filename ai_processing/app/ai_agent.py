@@ -74,6 +74,17 @@ class AIAgent:
                         
                         # Execute the tool
                         result = await self.tools.call_tool(tool_name, arguments)
+                        
+                        # Enhanced logging for tool results
+                        if result.get("success"):
+                            tool_result = result.get("result", {})
+                            if tool_result.get("task_created"):
+                                logger.info(f"Successfully created task: {arguments.get('title', 'Unknown')}")
+                                if tool_result.get("task_urls"):
+                                    logger.info(f"Task URLs: {tool_result['task_urls']}")
+                        else:
+                            logger.warning(f"Tool {tool_name} failed: {result.get('error', 'Unknown error')}")
+                        
                         tool_results.append({
                             "tool": tool_name,
                             "arguments": arguments,
