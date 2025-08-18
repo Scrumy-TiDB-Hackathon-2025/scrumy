@@ -7,6 +7,10 @@ from typing import Dict, List, Any, Callable
 import json
 import asyncio
 import logging
+try:
+    from .integrations import integration_manager
+except ImportError:
+    from integrations import integration_manager
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +19,7 @@ class ToolRegistry:
     
     def __init__(self):
         self.tools = {}
+        self.integration_manager = integration_manager
     
     def register_tool(self, name: str, description: str, parameters: Dict, function: Callable):
         """Register a tool that the agent can call"""
@@ -43,7 +48,8 @@ class ToolRegistry:
     async def call_tool(self, tool_name: str, arguments: Dict) -> Dict:
         """Execute a tool call from the agent"""
         if tool_name not in self.tools:
-            return {"error": f"Tool {tool_name} not found"}
+            logger.error(f"Tool {tool_name} not found. Available tools: {list(self.tools.keys())}")
+            return {"success": False, "error": f"Tool {tool_name} not found"}
         
         try:
             tool = self.tools[tool_name]
@@ -59,11 +65,87 @@ class ToolRegistry:
             return {"success": True, "result": result}
         except Exception as e:
             logger.error(f"Tool {tool_name} failed: {str(e)}")
-            return {"error": str(e)}
+            return {"success": False, "error": str(e)}
     
     def list_tools(self) -> List[str]:
         """Get list of registered tool names"""
         return list(self.tools.keys())
+    
+    def get_tool_info(self, tool_name: str) -> Dict:
+        """Get detailed information about a specific tool"""
+        if tool_name not in self.tools:
+            return {"error": f"Tool {tool_name} not found"}
+        
+        tool = self.tools[tool_name]
+        return {
+            "name": tool["name"],
+            "description": tool["description"],
+            "parameters": tool["parameters"],
+            "available": True
+        }
+    
+    async def create_task_everywhere(self, title: str, description: str, assignee: str = None,
+                                   priority: str = "medium", due_date: str = None,
+                                   meeting_id: str = None) -> Dict:
+        """Universal tool to create tasks in all available integrations"""
+        task_data = {
+            "title": title,
+            "description": description,
+            "assignee": assignee,
+            "priority": priority,
+            "due_date": due_date,
+            "meeting_id": meeting_id
+        }
+        
+        logger.info(f"Creating task everywhere: {title}")
+        result = await self.integration_manager.create_task_all(task_data)
+        
+        return {
+            "task_created": result["success"],
+            "integrations_used": result["integrations_used"],
+            "successful_integrations": result["successful_integrations"],
+            "results": result["results"],
+            "title": title,
+            "assignee": assignee
+        }
 
 # Global tool registry
 tools = ToolRegistry()
+
+# Register the universal task creation tool
+tools.register_tool(
+    name="create_task_everywhere",
+    description="Create a task in all available project management tools (Notion, ClickUp, etc.)",
+    parameters={
+        "type": "object",
+        "properties": {
+            "title": {
+                "type": "string",
+                "description": "The task title (required)"
+            },
+            "description": {
+                "type": "string", 
+                "description": "Detailed description of the task (required)"
+            },
+            "assignee": {
+                "type": "string",
+                "description": "Person assigned to the task (optional)"
+            },
+            "priority": {
+                "type": "string",
+                "enum": ["low", "medium", "high", "urgent"],
+                "description": "Task priority level (default: medium)"
+            },
+            "due_date": {
+                "type": "string",
+                "description": "Due date in YYYY-MM-DD format (optional)"
+            },
+            "meeting_id": {
+                "type": "string",
+                "description": "ID of the meeting this task came from (optional)"
+            }
+        },
+        "required": ["title", "description"]
+    },
+    function=tools.create_task_everywhere
+)

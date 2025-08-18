@@ -3,7 +3,10 @@ AI Agent with tools integration for ScrumBot
 Processes meeting transcripts and automatically calls tools
 """
 
-from .tools import tools
+try:
+    from .tools import tools
+except ImportError:
+    from tools import tools
 import json
 import os
 import logging
@@ -21,7 +24,10 @@ class AIAgent:
         self.ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
         
         # Import tool modules to register them
-        from . import notion_tools, slack_tools
+        try:
+            from . import notion_tools, slack_tools
+        except ImportError:
+            import notion_tools, slack_tools
     
     async def process_with_tools(self, transcript: str, meeting_id: str) -> Dict:
         """Process transcript and automatically call tools based on AI analysis"""

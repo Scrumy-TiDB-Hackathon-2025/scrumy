@@ -257,3 +257,129 @@ class ClickUpIntegration:
         # Add assignee if provided
         if task.get("assignee"):
             payload["assignees"] = [task["assignee"]]
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.base_url}/list/{self.list_id}/task",
+                    headers=headers,
+                    json=payload
+                ) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        return {
+                            "success": True,
+                            "clickup_task_id": result["id"],
+                            "clickup_url": result["url"],
+                            "task": task
+                        }
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"ClickUp API error: {response.status} - {error_text}")
+                        return {
+                            "success": False,
+                            "error": f"ClickUp API error: {response.status}",
+                            "details": error_text
+                        }
+        except Exception as e:
+            logger.error(f"Error creating ClickUp task: {str(e)}")
+            return {"success": False, "error": str(e)}
+    
+    def _create_mock_task(self, task: Dict) -> Dict:
+        """Create mock task for development"""
+        mock_task_id = f"cu_mock_{hash(task['title']) % 10000}"
+        mock_url = f"https://app.clickup.com/t/{mock_task_id}"
+        
+        logger.info(f"[MOCK] Created ClickUp task: {task['title']}")
+        
+        return {
+            "success": True,
+            "clickup_task_id": mock_task_id,
+            "clickup_url": mock_url,
+            "task": task,
+            "mock": True
+        }
+
+
+class IntegrationManager:
+    """Unified integration manager for all tools"""
+    
+    def __init__(self):
+        self.integrations = {}
+        
+        # Initialize available integrations
+        try:
+            self.integrations["notion"] = NotionIntegration()
+            logger.info("Notion integration initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize Notion integration: {e}")
+        
+        try:
+            self.integrations["slack"] = SlackIntegration()
+            logger.info("Slack integration initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize Slack integration: {e}")
+        
+        try:
+            self.integrations["clickup"] = ClickUpIntegration()
+            logger.info("ClickUp integration initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize ClickUp integration: {e}")
+    
+    async def create_task_all(self, task_data: Dict) -> Dict:
+        """Create task in all available integrations"""
+        results = {}
+        
+        for name, integration in self.integrations.items():
+            if hasattr(integration, 'create_task'):
+                try:
+                    result = await integration.create_task(task_data)
+                    results[name] = result
+                    logger.info(f"Task creation result for {name}: {result.get('success', False)}")
+                except Exception as e:
+                    logger.error(f"Error creating task in {name}: {str(e)}")
+                    results[name] = {"success": False, "error": str(e)}
+        
+        success_count = sum(1 for r in results.values() if r.get("success", False))
+        
+        return {
+            "success": success_count > 0,
+            "results": results,
+            "integrations_used": list(self.integrations.keys()),
+            "successful_integrations": success_count,
+            "total_integrations": len(self.integrations)
+        }
+    
+    async def send_notifications_all(self, message: str, task_data: Dict = None) -> Dict:
+        """Send notifications to all integrations that support it"""
+        results = {}
+        
+        for name, integration in self.integrations.items():
+            if hasattr(integration, 'send_task_notification'):
+                try:
+                    if task_data:
+                        result = await integration.send_task_notification(task_data)
+                    else:
+                        # Create a simple notification task
+                        simple_task = {
+                            "title": "Meeting Update",
+                            "description": message
+                        }
+                        result = await integration.send_task_notification(simple_task)
+                    
+                    results[name] = result
+                    logger.info(f"Notification result for {name}: {result.get('success', False)}")
+                except Exception as e:
+                    logger.error(f"Error sending notification to {name}: {str(e)}")
+                    results[name] = {"success": False, "error": str(e)}
+        
+        success_count = sum(1 for r in results.values() if r.get("success", False))
+        
+        return {
+            "success": success_count > 0,
+            "results": results,
+            "successful_notifications": success_count
+        }
+
+# Global integration manager instance
+integration_manager = IntegrationManager()
