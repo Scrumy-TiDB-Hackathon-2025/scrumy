@@ -2,6 +2,8 @@ import json
 
 import random
 
+import uuid
+
 from datetime import datetime, timedelta
 
 from typing import List, Dict
@@ -162,7 +164,7 @@ class MockDataGenerator:
 
         return {
 
-            "meeting_id": f"meeting_{random.randint(1000, 9999)}",
+            "meeting_id": f"meeting-{uuid.uuid4()}",
 
             "meeting_type": meeting_type,
 

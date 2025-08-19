@@ -1,11 +1,13 @@
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import asyncio
-
+import pytest
 import json
-
 from app.ai_processor import AIProcessor
-
 from app.speaker_identifier import SpeakerIdentifier
 
+@pytest.mark.asyncio
 async def test_speaker_identification():
 
     processor = AIProcessor()
