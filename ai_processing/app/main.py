@@ -14,6 +14,7 @@ from app.transcript_processor import TranscriptProcessor
 import time
 import os
 from app.integrated_processor import IntegratedAIProcessor
+import uuid
 
 # Import AIProcessor from its own module
 from app.ai_processor import AIProcessor
@@ -74,38 +75,47 @@ async def health_check():
 async def transcribe(file: UploadFile = File(...)):
     try:
         whisper_executable = "./whisper-server-package/main"
-        model_path = './whisper-server-package/models/for-tests-ggml-tiny.en.bin'
+        model_path = './whisper-server-package/models/for-tests-ggml-base.en.bin'
 
-
-        # Check whisper executable + model exist
         if not os.path.isfile(whisper_executable):
             raise HTTPException(status_code=500, detail="Whisper executable not found")
         if not os.path.isfile(model_path):
             raise HTTPException(status_code=500, detail="Whisper model not found")
 
-        # Save uploaded file temporarily
         temp_audio_path = f"temp_{file.filename}"
         with open(temp_audio_path, "wb") as f:
             f.write(await file.read())
 
-        # Run whisper
         result = subprocess.run(
-            [whisper_executable, "-m", model_path, temp_audio_path, "-f", "json"],
+            [
+                whisper_executable,
+                "-m", model_path,
+                "--output-json",
+                "--output-file", "-",
+                "--no-gpu",
+                temp_audio_path,
+            ],
             capture_output=True,
-            text=True
+            text=True,
+            timeout=60,
         )
 
-        # Clean up
         os.remove(temp_audio_path)
 
         if result.returncode != 0:
             raise HTTPException(status_code=500, detail=result.stderr)
 
-        return {"transcript": result.stdout}
+        # Parse JSON output from whisper
+        try:
+            parsed = json.loads(result.stdout)
+            transcript_text = parsed.get("text", "").strip()
+        except json.JSONDecodeError:
+            transcript_text = result.stdout.strip()
+
+        return {"transcript": transcript_text}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 # Global database manager instance for meeting management endpoints
 db = DatabaseManager()
@@ -460,8 +470,8 @@ async def save_transcript(request: SaveTranscriptRequest):
         logger.info(f"Received save-transcript request for meeting: {request.meeting_title}")
         logger.info(f"Number of transcripts to save: {len(request.transcripts)}")
 
-        # Generate a unique meeting ID
-        meeting_id = f"meeting-{int(time.time() * 1000)}"
+        # Generate a unique meeting ID using UUID
+        meeting_id = f"meeting-{uuid.uuid4()}"
 
         # Save the meeting
         await db.save_meeting(meeting_id, request.meeting_title)
