@@ -240,31 +240,26 @@ class TiDBManager:
             logger.error(f"Error saving AI summary: {e}")
             return False
     
-    async def save_task(self, task_data: Dict[str, Any]) -> Optional[int]:
+    async def save_task(self, meeting_id: str, title: str, description: str = "", 
+                       assignee: str = "", priority: str = "medium", status: str = "not_started",
+                       due_date: str = None, notion_page_id: str = None, 
+                       slack_message_ts: str = None, task_id: str = None) -> Optional[int]:
         """Save task and return task ID"""
         try:
             cursor = self.connection.cursor()
             query = '''
                 INSERT INTO tasks (meeting_id, title, description, assignee, priority, status, due_date, notion_page_id, slack_message_ts)
-                VALUES (%(meeting_id)s, %(title)s, %(description)s, %(assignee)s, %(priority)s, %(status)s, %(due_date)s, %(notion_page_id)s, %(slack_message_ts)s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             '''
             
-            data = {
-                'meeting_id': task_data['meeting_id'],
-                'title': task_data['title'],
-                'description': task_data.get('description', ''),
-                'assignee': task_data.get('assignee', ''),
-                'priority': task_data.get('priority', 'medium'),
-                'status': task_data.get('status', 'not_started'),
-                'due_date': task_data.get('due_date'),
-                'notion_page_id': task_data.get('notion_page_id'),
-                'slack_message_ts': task_data.get('slack_message_ts')
-            }
-            
-            cursor.execute(query, data)
+            cursor.execute(query, (
+                meeting_id, title, description, assignee, priority, 
+                status, due_date, notion_page_id, slack_message_ts
+            ))
             self.connection.commit()
             task_id = cursor.lastrowid
             cursor.close()
+            logger.info(f"Saved task '{title}' with ID {task_id} for meeting {meeting_id}")
             return task_id
             
         except Error as e:

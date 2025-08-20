@@ -3,7 +3,10 @@ AI Agent with tools integration for ScrumBot
 Processes meeting transcripts and automatically calls tools
 """
 
-from .tools import tools
+try:
+    from .tools import tools
+except ImportError:
+    from tools import tools
 import json
 import os
 import logging
@@ -21,7 +24,10 @@ class AIAgent:
         self.ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
         
         # Import tool modules to register them
-        from . import notion_tools, slack_tools
+        try:
+            from . import notion_tools, slack_tools
+        except ImportError:
+            import notion_tools, slack_tools
     
     async def process_with_tools(self, transcript: str, meeting_id: str) -> Dict:
         """Process transcript and automatically call tools based on AI analysis"""
@@ -68,6 +74,17 @@ class AIAgent:
                         
                         # Execute the tool
                         result = await self.tools.call_tool(tool_name, arguments)
+                        
+                        # Enhanced logging for tool results
+                        if result.get("success"):
+                            tool_result = result.get("result", {})
+                            if tool_result.get("task_created"):
+                                logger.info(f"Successfully created task: {arguments.get('title', 'Unknown')}")
+                                if tool_result.get("task_urls"):
+                                    logger.info(f"Task URLs: {tool_result['task_urls']}")
+                        else:
+                            logger.warning(f"Tool {tool_name} failed: {result.get('error', 'Unknown error')}")
+                        
                         tool_results.append({
                             "tool": tool_name,
                             "arguments": arguments,

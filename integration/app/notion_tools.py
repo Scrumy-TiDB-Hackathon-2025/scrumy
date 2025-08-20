@@ -2,22 +2,23 @@
 Notion integration tools for ScrumBot AI agent
 """
 
-from .tools import tools
-from .integrations import NotionIntegration
-from .tidb_manager import TiDBManager
+try:
+    from .tools import tools
+    from .integrations import integration_manager
+    from .tidb_manager import tidb_manager
+except ImportError:
+    from tools import tools
+    from integrations import integration_manager
+    from tidb_manager import tidb_manager
 from typing import Dict
 import logging
 
 logger = logging.getLogger(__name__)
 
-# Initialize integrations
-notion = NotionIntegration()
-tidb = TiDBManager()
-
 async def create_notion_task(title: str, description: str, assignee: str = None, 
                            priority: str = "medium", due_date: str = None, 
                            meeting_id: str = None) -> Dict:
-    """Tool function to create a task in Notion"""
+    """Tool function to create a task specifically in Notion"""
     
     task_data = {
         "title": title,
@@ -29,29 +30,39 @@ async def create_notion_task(title: str, description: str, assignee: str = None,
     }
     
     try:
+        # Get Notion integration
+        notion_integration = integration_manager.integrations.get("notion")
+        if not notion_integration:
+            return {"task_created": False, "error": "Notion integration not available"}
+        
         # Create task in Notion
-        result = await notion.create_task(task_data)
+        result = await notion_integration.create_task(task_data)
         
         if result["success"]:
             # Also save to TiDB for synchronization
             if meeting_id:
-                await tidb.save_task(
-                    task_id=f"task_{hash(title) % 10000}",
+                # Ensure TiDB connection
+                if not tidb_manager.connection or not tidb_manager.connection.is_connected():
+                    await tidb_manager.connect()
+                
+                task_id = await tidb_manager.save_task(
                     meeting_id=meeting_id,
                     title=title,
                     description=description,
-                    assignee=assignee,
+                    assignee=assignee or "",
                     due_date=due_date,
                     priority=priority,
                     notion_page_id=result.get("notion_page_id")
                 )
+                logger.info(f"Saved task to TiDB with ID: {task_id}")
             
             return {
                 "task_created": True,
                 "notion_url": result.get("notion_url"),
                 "task_id": result.get("notion_page_id"),
                 "title": title,
-                "assignee": assignee
+                "assignee": assignee,
+                "mock": result.get("mock", False)
             }
         else:
             return {
@@ -66,7 +77,7 @@ async def create_notion_task(title: str, description: str, assignee: str = None,
 # Register the tool
 tools.register_tool(
     name="create_notion_task",
-    description="Create a new task in Notion database with title, description, assignee, priority, and due date",
+    description="Create a new task specifically in Notion database with title, description, assignee, priority, and due date",
     parameters={
         "type": "object",
         "properties": {
