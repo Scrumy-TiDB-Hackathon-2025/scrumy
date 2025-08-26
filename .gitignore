@@ -66,6 +66,7 @@ frontend_dashboard/.env
 frontend_dashboard/npm-debug.log*
 frontend_dashboard/yarn-debug.log*
 frontend_dashboard/yarn-error.log*
+frontend_dashboard/test-*.js
 
 # Next.js cache
 frontend_dashboard/.next/cache/
@@ -221,12 +222,15 @@ temp/
 # Clean run scripts (from scan)
 frontend_dashboard/clean_run_windows.bat
 
-# Webpack cache (from scan)  
+# Webpack cache (from scan)
 **/.next/cache/webpack/
 
 # PYC files in venv (from scan)
 **/lib/python*/site-packages/**/__pycache__/
 **/lib/python*/site-packages/**/*.pyc
+**/__pycache__/
+**/*.pyc
+integration/app/__pycache__/
 
 # ----------------
 # Archive & Compressed
@@ -265,10 +269,38 @@ PROGRESSIVE_INTEGRATION_LAB.md
 PROJECT_MANAGER_COMPREHENSIVE_GUIDE.md
 
 # ----------------
+# Implementation Guides (Internal Use Only)
+# ----------------
+INTEGRATION_GUIDES_OVERVIEW.md
+INTEGRATION_SERVICE_IMPLEMENTATION_GUIDE.md
+HACKATHON_FINAL_ROADMAP.md
+ai_processing/AI_INTEGRATION_GUIDE.md
+ai_processing/AI_PROCESSING_IMPLEMENTATION_GUIDE.md
+ai_processing/TRANSCRIPTION_TROUBLESHOOTING.md
+frontend_dashboard/INTEGRATION_IMPLEMENTATION_GUIDE.md
+TEAMMATE_MIGRATION_INSTRUCTIONS.md
+EPIC_IMPLEMENTATION_STATUS_ANALYSIS.md
+MEETILY_SEPARATION_PLAN.md
+PARTICIPANT_DATA_INTEGRATION_REPORT.md
+PARTICIPANT_DATA_INTEGRATION_TEST_RESULTS.md
+SCRUMBOT_COMPREHENSIVE_SUMMARY.md
+
+# ----------------
 # Integration Analysis Documents (Internal Use Only)
 # ----------------
 PARTICIPANT_DATA_INTEGRATION_ANALYSIS.md
 EPIC_AUGMENTATION_GUIDE.md
+INTEGRATION/
+
+# ----------------
+# Test Files (Internal Use Only)
+# ----------------
+frontend_dashboard/test-api-integration.js
+frontend_dashboard/test-frontend.js
+integration/app/discover_endpoints.py
+integration/app/test_participant_integration.py
+integration/app/participant_integration_test_results.json
+ai_processing/tests/test_results.json
 
 # ----------------
 # Git History Cleanup (Internal Use Only)

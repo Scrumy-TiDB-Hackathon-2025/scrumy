@@ -17,7 +17,7 @@ class DatabaseManager:
         """Initialize the database with required tables"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            
+
             # Create meetings table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS meetings (
@@ -27,7 +27,7 @@ class DatabaseManager:
                     updated_at TEXT NOT NULL
                 )
             """)
-            
+
             # Create transcripts table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS transcripts (
@@ -41,7 +41,7 @@ class DatabaseManager:
                     FOREIGN KEY (meeting_id) REFERENCES meetings(id)
                 )
             """)
-            
+
             # Create summary_processes table (keeping existing functionality)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS summary_processes (
@@ -88,6 +88,22 @@ class DatabaseManager:
                 )
             """)
 
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS participants (
+                    id TEXT PRIMARY KEY,
+                    meeting_id TEXT NOT NULL,
+                    participant_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    platform_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    join_time TEXT NOT NULL,
+                    is_host BOOLEAN NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (meeting_id) REFERENCES meetings(id),
+                    UNIQUE(meeting_id, participant_id)
+                )
+            """)
+
             conn.commit()
 
     @asynccontextmanager
@@ -102,39 +118,39 @@ class DatabaseManager:
     async def create_process(self, meeting_id: str) -> str:
         """Create a new process entry or update existing one and return its ID"""
         now = datetime.utcnow().isoformat()
-        
+
         async with self._get_connection() as conn:
             # First try to update existing process
             await conn.execute(
                 """
-                UPDATE summary_processes 
+                UPDATE summary_processes
                 SET status = ?, updated_at = ?, start_time = ?, error = NULL, result = NULL
                 WHERE meeting_id = ?
                 """,
                 ("PENDING", now, now, meeting_id)
             )
-            
+
             # If no rows were updated, insert a new one
             if conn.total_changes == 0:
                 await conn.execute(
                     "INSERT INTO summary_processes (meeting_id, status, created_at, updated_at, start_time) VALUES (?, ?, ?, ?, ?)",
                     (meeting_id, "PENDING", now, now, now)
                 )
-            
+
             await conn.commit()
-        
+
         return meeting_id
 
-    async def update_process(self, meeting_id: str, status: str, result: Optional[Dict] = None, error: Optional[str] = None, 
-                           chunk_count: Optional[int] = None, processing_time: Optional[float] = None, 
+    async def update_process(self, meeting_id: str, status: str, result: Optional[Dict] = None, error: Optional[str] = None,
+                           chunk_count: Optional[int] = None, processing_time: Optional[float] = None,
                            metadata: Optional[Dict] = None):
         """Update a process status and result"""
         now = datetime.utcnow().isoformat()
-        
+
         async with self._get_connection() as conn:
             update_fields = ["status = ?", "updated_at = ?"]
             params = [status, now]
-            
+
             if result:
                 update_fields.append("result = ?")
                 params.append(json.dumps(result))
@@ -153,31 +169,31 @@ class DatabaseManager:
             if status == 'COMPLETED' or status == 'FAILED':
                 update_fields.append("end_time = ?")
                 params.append(now)
-                
+
             params.append(meeting_id)
             query = f"UPDATE summary_processes SET {', '.join(update_fields)} WHERE meeting_id = ?"
             await conn.execute(query, params)
             await conn.commit()
 
-    async def save_transcript(self, meeting_id: str, transcript_text: str, model: str, model_name: str, 
+    async def save_transcript(self, meeting_id: str, transcript_text: str, model: str, model_name: str,
                             chunk_size: int, overlap: int):
         """Save transcript data"""
         now = datetime.utcnow().isoformat()
         async with self._get_connection() as conn:
             # First try to update existing transcript
             await conn.execute("""
-                UPDATE transcript_chunks 
+                UPDATE transcript_chunks
                 SET transcript_text = ?, model = ?, model_name = ?, chunk_size = ?, overlap = ?, created_at = ?
                 WHERE meeting_id = ?
             """, (transcript_text, model, model_name, chunk_size, overlap, now, meeting_id))
-            
+
             # If no rows were updated, insert a new one
             if conn.total_changes == 0:
                 await conn.execute("""
                     INSERT INTO transcript_chunks (meeting_id, transcript_text, model, model_name, chunk_size, overlap, created_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, (meeting_id, transcript_text, model, model_name, chunk_size, overlap, now))
-            
+
             await conn.commit()
 
     async def update_meeting_name(self, meeting_id: str, meeting_name: str):
@@ -190,23 +206,23 @@ class DatabaseManager:
                 SET title = ?, updated_at = ?
                 WHERE id = ?
             """, (meeting_name, now, meeting_id))
-            
+
             # Update transcript_chunks table
             await conn.execute("""
                 UPDATE transcript_chunks
                 SET meeting_name = ?
                 WHERE meeting_id = ?
             """, (meeting_name, meeting_id))
-            
+
             await conn.commit()
 
     async def get_transcript_data(self, meeting_id: str):
         """Get transcript data for a meeting"""
         async with self._get_connection() as conn:
             async with conn.execute("""
-                SELECT t.*, p.status, p.result 
-                FROM transcript_chunks t 
-                JOIN summary_processes p ON t.meeting_id = p.meeting_id 
+                SELECT t.*, p.status, p.result
+                FROM transcript_chunks t
+                JOIN summary_processes p ON t.meeting_id = p.meeting_id
                 WHERE t.meeting_id = ?
             """, (meeting_id,)) as cursor:
                 row = await cursor.fetchone()
@@ -219,11 +235,11 @@ class DatabaseManager:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                
+
                 # Only check if meeting ID exists (not title, as titles can be duplicated)
                 cursor.execute("SELECT id FROM meetings WHERE id = ?", (meeting_id,))
                 existing_meeting = cursor.fetchone()
-                
+
                 if not existing_meeting:
                     # Create new meeting
                     cursor.execute("""
@@ -244,14 +260,14 @@ class DatabaseManager:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                
+
                 # Save transcript
                 cursor.execute("""
                     INSERT INTO transcripts (
                         meeting_id, transcript, timestamp, summary, action_items, key_points
                     ) VALUES (?, ?, ?, ?, ?, ?)
                 """, (meeting_id, transcript, timestamp, summary, action_items, key_points))
-                
+
                 conn.commit()
                 return True
         except Exception as e:
@@ -269,10 +285,10 @@ class DatabaseManager:
                     WHERE id = ?
                 """, (meeting_id,))
                 meeting = await cursor.fetchone()
-                
+
                 if not meeting:
                     return None
-                
+
                 # Get all transcripts for this meeting
                 cursor = await conn.execute("""
                     SELECT transcript, timestamp
@@ -280,7 +296,7 @@ class DatabaseManager:
                     WHERE meeting_id = ?
                 """, (meeting_id,))
                 transcripts = await cursor.fetchall()
-                
+
                 return {
                     'id': meeting[0],
                     'title': meeting[1],
@@ -328,16 +344,16 @@ class DatabaseManager:
             try:
                 # Delete from transcript_chunks
                 await conn.execute("DELETE FROM transcript_chunks WHERE meeting_id = ?", (meeting_id,))
-                
+
                 # Delete from summary_processes
                 await conn.execute("DELETE FROM summary_processes WHERE meeting_id = ?", (meeting_id,))
-                
+
                 # Delete from transcripts
                 await conn.execute("DELETE FROM transcripts WHERE meeting_id = ?", (meeting_id,))
-                
+
                 # Delete from meetings
                 await conn.execute("DELETE FROM meetings WHERE id = ?", (meeting_id,))
-                
+
                 await conn.commit()
                 return True
             except Exception as e:
@@ -360,9 +376,9 @@ class DatabaseManager:
             if existing_config:
                 # Update existing configuration
                 await conn.execute("""
-                    UPDATE settings 
+                    UPDATE settings
                     SET provider = ?, model = ?, whisperModel = ?
-                    WHERE id = '1'    
+                    WHERE id = '1'
                 """, (provider, model, whisperModel))
             else:
                 # Insert new configuration
@@ -413,7 +429,7 @@ class DatabaseManager:
             cursor = await conn.execute(f"SELECT {api_key_name} FROM settings WHERE id = '1'")
             row = await cursor.fetchone()
             return row[0] if row else None
-        
+
     async def delete_api_key(self, provider: str):
         """Delete the API key"""
         provider_list = ["openai", "claude", "groq", "ollama"]
@@ -441,4 +457,3 @@ class DatabaseManager:
             cursor.execute("DELETE FROM meetings")
             cursor.execute("DELETE FROM settings")
             conn.commit()
-

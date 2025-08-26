@@ -1,15 +1,15 @@
 import subprocess
 import asyncio
 import httpx
-from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Form
+from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Form, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import uvicorn
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 import logging
 from dotenv import load_dotenv
-from app.db import DatabaseManager
+from app.database_interface import DatabaseFactory, validate_database_config
 import json
 from threading import Lock
 from app.transcript_processor import TranscriptProcessor
@@ -17,6 +17,7 @@ import time
 import os
 from app.integrated_processor import IntegratedAIProcessor
 import uuid
+import base64
 
 # Import AIProcessor from its own module
 from app.ai_processor import AIProcessor
@@ -26,6 +27,12 @@ try:
     from app.tools_endpoints import router as tools_router
 except ImportError:
     from app.tools_endpoints import router as tools_router
+
+# Import WebSocket functionality
+from app.websocket_server import websocket_endpoint, websocket_manager
+
+# Import integration adapter
+from app.integration_adapter import get_integration_adapter, notify_meeting_processed
 
 # Load environment variables
 load_dotenv()
@@ -67,6 +74,22 @@ app.add_middleware(
 
 # Include tools router
 app.include_router(tools_router, prefix="/api/v1", tags=["tools"])
+
+# WebSocket endpoint for real-time audio processing
+@app.websocket("/ws")
+async def websocket_audio_stream(websocket: WebSocket):
+    """WebSocket endpoint for real-time audio streaming and transcription"""
+    await websocket_endpoint(websocket)
+
+@app.websocket("/ws/audio")
+async def websocket_audio_shared_contract(websocket: WebSocket):
+    """WebSocket endpoint matching shared contract specification"""
+    await websocket_endpoint(websocket)
+
+@app.websocket("/ws/audio-stream")
+async def websocket_audio_stream_alt(websocket: WebSocket):
+    """Alternative WebSocket endpoint path for compatibility"""
+    await websocket_endpoint(websocket)
 
 # Lab-required endpoints
 @app.get("/health")
@@ -160,10 +183,54 @@ async def transcribe(file: UploadFile = File(...)):
         logger.error(f"Transcription error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# Global database manager instance for meeting management endpoints
-db = DatabaseManager()
+# Initialize database based on environment configuration
+def create_database():
+    """Create database instance based on environment configuration"""
+    db_type = os.getenv('DATABASE_TYPE', 'sqlite').lower()
 
-# New Pydantic models for meeting management
+    if db_type == 'tidb':
+        # TiDB configuration from environment
+        config = {
+            "type": "tidb",
+            "connection": {
+                "host": os.getenv('TIDB_HOST', 'localhost'),
+                "port": int(os.getenv('TIDB_PORT', 4000)),
+                "user": os.getenv('TIDB_USER'),
+                "password": os.getenv('TIDB_PASSWORD'),
+                "database": os.getenv('TIDB_DATABASE', 'scrumy_ai'),
+                "ssl_mode": os.getenv('TIDB_SSL_MODE', 'REQUIRED')
+            }
+        }
+    else:
+        # SQLite configuration (default for development)
+        config = {
+            "type": "sqlite",
+            "connection": {
+                "db_path": os.getenv('SQLITE_DB_PATH', 'meeting_minutes.db')
+            }
+        }
+
+    if validate_database_config(config):
+        logger.info(f"Initializing {db_type.upper()} database")
+        return DatabaseFactory.create_from_config(config)
+    else:
+        logger.error("Invalid database configuration, falling back to SQLite")
+        fallback_config = {"type": "sqlite", "connection": {"db_path": "meeting_minutes.db"}}
+        return DatabaseFactory.create_from_config(fallback_config)
+
+# Global database instance
+db = create_database()
+
+# New Pydantic models for meeting management with participant support
+class Participant(BaseModel):
+    """Participant data from chrome extension"""
+    id: str
+    name: str
+    platform_id: Optional[str] = None
+    status: str = "active"
+    join_time: str
+    is_host: bool = False
+
 class Transcript(BaseModel):
     id: str
     text: str
@@ -190,6 +257,7 @@ class DeleteMeetingRequest(BaseModel):
 class SaveTranscriptRequest(BaseModel):
     meeting_title: str
     transcripts: List[Transcript]
+    participants: Optional[List[Participant]] = []
 
 class SaveModelConfigRequest(BaseModel):
     provider: str
@@ -207,12 +275,13 @@ class TranscriptRequest(BaseModel):
     overlap: Optional[int] = 1000
     platform: Optional[str] = None
     timestamp: Optional[str] = None
+    participants: Optional[List[Participant]] = []
 
 class SummaryProcessor:
     """Handles the processing of summaries in a thread-safe way"""
     def __init__(self):
         try:
-            self.db = DatabaseManager()
+            self.db = db  # Use the global database instance
 
             logger.info("Initializing SummaryProcessor components")
             self.transcript_processor = TranscriptProcessor()
@@ -321,12 +390,18 @@ async def process_transcript_background(process_id: str, transcript: TranscriptR
     try:
         logger.info(f"Starting background processing for process_id: {process_id}")
 
+        # Convert participants to dict format for transcript processor
+        participants_dict = None
+        if transcript.participants:
+            participants_dict = [p.dict() if hasattr(p, 'dict') else p for p in transcript.participants]
+
         num_chunks, all_json_data = await processor.process_transcript(
             text=transcript.text,
             model=transcript.model,
             model_name=transcript.model_name,
             chunk_size=transcript.chunk_size,
-            overlap=transcript.overlap
+            overlap=transcript.overlap,
+            participants=participants_dict
         )
 
         # Create final summary structure by aggregating chunk results
@@ -396,6 +471,22 @@ async def process_transcript_api(
             transcript.chunk_size,
             transcript.overlap
         )
+
+        # Save participants if provided
+        if transcript.participants:
+            logger.info(f"Saving {len(transcript.participants)} participants from transcript request")
+            participants_data = [
+                {
+                    "id": p.id,
+                    "name": p.name,
+                    "platform_id": p.platform_id or p.id,
+                    "status": p.status,
+                    "join_time": p.join_time,
+                    "is_host": p.is_host
+                }
+                for p in transcript.participants
+            ]
+            await processor.db.save_participants_batch(transcript.meeting_id, participants_data)
 
         # Start background processing
         background_tasks.add_task(
@@ -519,6 +610,22 @@ async def save_transcript(request: SaveTranscriptRequest):
         # Save the meeting
         await db.save_meeting(meeting_id, request.meeting_title)
 
+        # Save participants if provided
+        if request.participants:
+            logger.info(f"Saving {len(request.participants)} participants for meeting {meeting_id}")
+            participants_data = [
+                {
+                    "id": p.id,
+                    "name": p.name,
+                    "platform_id": p.platform_id or p.id,
+                    "status": p.status,
+                    "join_time": p.join_time,
+                    "is_host": p.is_host
+                }
+                for p in request.participants
+            ]
+            await db.save_participants_batch(meeting_id, participants_data)
+
         # Save each transcript segment
         for transcript in request.transcripts:
             await db.save_meeting_transcript(
@@ -582,6 +689,264 @@ async def get_api_key(request: GetApiKeyRequest):
     """Get the API key for a given provider"""
     return await db.get_api_key(request.provider)
 
+# Chrome Extension Compatible Endpoints
+
+class IdentifySpeakersRequest(BaseModel):
+    text: str
+    context: Optional[str] = ""
+
+class GenerateSummaryRequest(BaseModel):
+    transcript: str
+    meeting_id: Optional[str] = None
+    meeting_title: Optional[str] = None
+
+class ExtractTasksRequest(BaseModel):
+    transcript: str
+    meeting_context: Optional[Dict] = None
+
+class ProcessTranscriptWithToolsRequest(BaseModel):
+    text: str
+    meeting_id: str
+    timestamp: Optional[str] = None
+    platform: Optional[str] = "unknown"
+
+@app.post("/identify-speakers")
+async def identify_speakers(request: IdentifySpeakersRequest):
+    """Identify speakers in meeting transcript - Chrome extension compatible"""
+    try:
+        from app.speaker_identifier import SpeakerIdentifier
+
+        ai_processor = AIProcessor()
+        speaker_identifier = SpeakerIdentifier(ai_processor)
+
+        result = await speaker_identifier.identify_speakers_advanced(
+            request.text,
+            request.context
+        )
+
+        # Format response to match Chrome extension expectations
+        speakers_data = []
+        if 'speakers' in result:
+            for i, speaker in enumerate(result['speakers']):
+                if isinstance(speaker, dict):
+                    speakers_data.append({
+                        'id': f"speaker_{i + 1}",
+                        'name': speaker.get('name', f'Speaker {i + 1}'),
+                        'segments': speaker.get('segments', []),
+                        'total_words': speaker.get('word_count', 0),
+                        'characteristics': speaker.get('characteristics', '')
+                    })
+                elif isinstance(speaker, str):
+                    speakers_data.append({
+                        'id': f"speaker_{i + 1}",
+                        'name': speaker,
+                        'segments': [f"{speaker} contributed to the discussion"],
+                        'total_words': 50,
+                        'characteristics': f"{speaker} - active participant"
+                    })
+
+        return {
+            'status': 'success',
+            'data': {
+                'speakers': speakers_data,
+                'confidence': result.get('confidence', 0.85),
+                'total_speakers': len(speakers_data),
+                'identification_method': 'ai_inference',
+                'processing_time': result.get('processing_time', 1.5)
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Speaker identification error: {e}")
+        raise HTTPException(status_code=500, detail=f"Speaker identification failed: {str(e)}")
+
+@app.post("/generate-summary")
+async def generate_summary(request: GenerateSummaryRequest):
+    """Generate comprehensive meeting summary - Chrome extension compatible"""
+    try:
+        from app.meeting_summarizer import MeetingSummarizer
+
+        ai_processor = AIProcessor()
+        summarizer = MeetingSummarizer(ai_processor)
+
+        meeting_context = {
+            'meeting_id': request.meeting_id,
+            'meeting_title': request.meeting_title or "Team Meeting"
+        }
+
+        summary = await summarizer.generate_comprehensive_summary(
+            request.transcript,
+            meeting_context
+        )
+
+        # Format response to match Chrome extension expectations
+        return {
+            'status': 'success',
+            'data': {
+                'meeting_title': request.meeting_title or "Team Meeting",
+                'executive_summary': {
+                    'overview': summary.get('overview', 'Meeting summary generated'),
+                    'key_outcomes': summary.get('key_points', ['Meeting completed successfully']),
+                    'business_impact': summary.get('business_impact', 'Positive impact on team collaboration'),
+                    'urgency_level': summary.get('urgency_level', 'medium'),
+                    'follow_up_required': summary.get('follow_up_required', True)
+                },
+                'key_decisions': {
+                    'decisions': summary.get('decisions', []),
+                    'total_decisions': len(summary.get('decisions', [])),
+                    'consensus_level': summary.get('consensus_level', 'good')
+                },
+                'participants': {
+                    'participants': summary.get('participants', []),
+                    'meeting_leader': summary.get('meeting_leader', 'Unknown'),
+                    'total_participants': len(summary.get('participants', [])),
+                    'participation_balance': summary.get('participation_balance', 'balanced')
+                },
+                'summary_generated_at': datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Summary generation error: {e}")
+        raise HTTPException(status_code=500, detail=f"Summary generation failed: {str(e)}")
+
+@app.post("/extract-tasks")
+async def extract_tasks(request: ExtractTasksRequest):
+    """Extract action items and tasks - Chrome extension compatible"""
+    try:
+        from app.task_extractor import TaskExtractor
+
+        ai_processor = AIProcessor()
+        task_extractor = TaskExtractor(ai_processor)
+
+        tasks_result = await task_extractor.extract_comprehensive_tasks(
+            request.transcript,
+            request.meeting_context or {}
+        )
+
+        # Format tasks to match Chrome extension expectations
+        formatted_tasks = []
+        if 'tasks' in tasks_result:
+            for i, task in enumerate(tasks_result['tasks']):
+                if isinstance(task, dict):
+                    formatted_tasks.append({
+                        'id': f"task_{i + 1}",
+                        'title': task.get('title', f'Task {i + 1}'),
+                        'description': task.get('description', ''),
+                        'assignee': task.get('assignee', 'Unassigned'),
+                        'due_date': task.get('due_date'),
+                        'priority': task.get('priority', 'medium'),
+                        'status': 'pending',
+                        'category': task.get('category', 'action_item'),
+                        'dependencies': task.get('dependencies', []),
+                        'business_impact': task.get('priority', 'medium'),
+                        'created_at': datetime.now().isoformat()
+                    })
+
+        return {
+            'status': 'success',
+            'data': {
+                'tasks': formatted_tasks,
+                'task_summary': {
+                    'total_tasks': len(formatted_tasks),
+                    'high_priority': len([t for t in formatted_tasks if t['priority'] == 'high']),
+                    'with_deadlines': len([t for t in formatted_tasks if t['due_date']]),
+                    'assigned': len([t for t in formatted_tasks if t['assignee'] != 'Unassigned'])
+                },
+                'extraction_metadata': {
+                    'explicit_tasks_found': len(formatted_tasks),
+                    'implicit_tasks_found': 0,
+                    'extracted_at': datetime.now().isoformat()
+                }
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Task extraction error: {e}")
+        raise HTTPException(status_code=500, detail=f"Task extraction failed: {str(e)}")
+
+@app.post("/process-transcript-with-tools")
+async def process_transcript_with_tools(request: ProcessTranscriptWithToolsRequest):
+    """Process transcript with all AI tools - Chrome extension compatible"""
+    try:
+        # Use integrated processor for comprehensive analysis
+        integrated_processor = IntegratedAIProcessor()
+
+        meeting_context = {
+            'meeting_id': request.meeting_id,
+            'platform': request.platform,
+            'timestamp': request.timestamp
+        }
+
+        result = await integrated_processor.process_complete_meeting(
+            request.text,
+            meeting_context
+        )
+
+        # Extract participants for integration
+        participants = []
+        if 'speakers' in result:
+            participants = [
+                speaker.get('name', 'Unknown')
+                for speaker in result['speakers']
+                if isinstance(speaker, dict)
+            ]
+
+        # Notify integration systems (async, non-blocking)
+        try:
+            asyncio.create_task(notify_meeting_processed(
+                meeting_id=request.meeting_id,
+                meeting_title=f"Meeting {request.meeting_id}",
+                platform=request.platform,
+                participants=participants,
+                transcript=request.text,
+                summary_data=result.get('summary', {}),
+                tasks_data=result.get('tasks', []),
+                speakers_data=result.get('speakers', [])
+            ))
+            logger.info(f"Triggered integration processing for meeting {request.meeting_id}")
+        except Exception as integration_error:
+            logger.warning(f"Integration notification failed: {integration_error}")
+
+        # Format response to match Chrome extension expectations
+        return {
+            'status': 'success',
+            'meeting_id': request.meeting_id,
+            'analysis': result.get('summary', {}),
+            'actions_taken': result.get('tasks', []),
+            'speakers': result.get('speakers', []),
+            'tools_used': 3,  # Speaker ID, Summary, Tasks
+            'processed_at': datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Comprehensive processing error: {e}")
+        raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
+
+@app.get("/available-tools")
+async def get_available_tools():
+    """Get list of available AI tools - Chrome extension compatible"""
+    return {
+        'tools': [
+            {
+                'name': 'identify_speakers',
+                'description': 'Identify speakers in meeting transcript',
+                'parameters': ['text', 'context']
+            },
+            {
+                'name': 'extract_tasks',
+                'description': 'Extract action items and tasks',
+                'parameters': ['transcript', 'meeting_context']
+            },
+            {
+                'name': 'generate_summary',
+                'description': 'Generate comprehensive meeting summary',
+                'parameters': ['transcript', 'meeting_title']
+            }
+        ],
+        'tool_names': ['identify_speakers', 'extract_tasks', 'generate_summary'],
+        'count': 3
+    }
 
 
 

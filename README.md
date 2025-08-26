@@ -158,17 +158,21 @@ ScrumBot extends Meetily's proven architecture with new components:
 
 ### 🆕 **New ScrumBot Features**
 - **Chrome Extension**: Direct audio capture from video calls
+- **Enhanced Audio Processing**: Real-time participant data extraction and speaker identification
 - **TiDB Integration**: Scalable cloud database with analytics
 - **MCP Protocol**: Automated task creation and notifications
-- **Speaker Identification**: AI-powered speaker diarization
+- **Speaker Identification**: AI-powered speaker diarization with participant context
 - **Cross-Platform Sync**: Tasks synchronized across Notion, Slack, and ScrumBot
 - **Real-time Analytics**: Meeting insights and team productivity metrics
+- **Participant Tracking**: Real-time participant status and engagement metrics
 
 ### 🚧 **In Development**
 - Advanced meeting analytics dashboard
 - Team productivity insights
 - Multi-language support
 - Mobile companion app
+- Voice pattern recognition for enhanced speaker identification
+- Participation balance analysis and recommendations
 
 
 ## Quick Start

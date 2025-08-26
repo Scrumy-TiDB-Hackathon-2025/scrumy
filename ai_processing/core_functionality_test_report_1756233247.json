@@ -1,0 +1,150 @@
+{
+  "timestamp": "2025-08-26T19:34:07.641618",
+  "total_tests": 8,
+  "passed_tests": 2,
+  "success_rate": 0.25,
+  "total_duration": 4.200931072235107,
+  "performance_metrics": {
+    "response_time": [
+      0.009029865264892578
+    ],
+    "total_time": [
+      3.4258391857147217
+    ],
+    "handshake_time": [
+      1.0
+    ],
+    "transcription_accuracy": [
+      0
+    ],
+    "speaker_id_success_rate": [
+      0
+    ],
+    "processing_time": [
+      0.053359031677246094
+    ],
+    "speakers_tested": [
+      3
+    ],
+    "concurrent_connections": [
+      5
+    ],
+    "total_chunks_processed": [
+      15
+    ],
+    "total_errors": [
+      0
+    ],
+    "average_chunk_duration": [
+      0.09749794006347656
+    ],
+    "throughput_chunks_per_second": [
+      37.96036503507052
+    ],
+    "memory_increase_mb": [
+      2.109375
+    ],
+    "cpu_percent": [
+      0.0
+    ],
+    "total_test_duration": [
+      0.39514899253845215
+    ],
+    "error_handling_score": [
+      0.5
+    ],
+    "scenarios_tested": [
+      4
+    ],
+    "test_duration": [
+      0.027423858642578125
+    ]
+  },
+  "integration_status": {
+    "Chrome Extension": false,
+    "Frontend Dashboard": false,
+    "Tools Integration": false,
+    "Performance": true
+  },
+  "detailed_results": [
+    {
+      "test": "Health Endpoint Compatibility",
+      "success": true,
+      "details": "Response: {'status': 'healthy'}, Duration: 0.009s",
+      "timestamp": "2025-08-26T19:34:03.548785",
+      "metrics": {
+        "response_time": 0.009029865264892578
+      }
+    },
+    {
+      "test": "WebSocket Shared Contract Compatibility",
+      "success": false,
+      "details": "server rejected WebSocket connection: HTTP 403",
+      "timestamp": "2025-08-26T19:34:03.579854",
+      "metrics": {}
+    },
+    {
+      "test": "Chrome Extension Integration",
+      "success": false,
+      "details": "Handshake + Audio processing: 3.426s",
+      "timestamp": "2025-08-26T19:34:07.011416",
+      "metrics": {
+        "total_time": 3.4258391857147217,
+        "handshake_time": 1.0
+      }
+    },
+    {
+      "test": "Voice Transcription + Speaker ID",
+      "success": false,
+      "details": "Transcription accuracy: 0.00, Speaker ID rate: 0.00",
+      "timestamp": "2025-08-26T19:34:07.072633",
+      "metrics": {
+        "transcription_accuracy": 0,
+        "speaker_id_success_rate": 0,
+        "processing_time": 0.053359031677246094,
+        "speakers_tested": 3
+      }
+    },
+    {
+      "test": "Frontend Dashboard API Compatibility",
+      "success": false,
+      "details": "HTTP 500: {\"detail\":\"Processing failed: The api_key client option must be set either by passing api_key to the client or by setting the GROQ_API_KEY environment variable\"}",
+      "timestamp": "2025-08-26T19:34:07.180287",
+      "metrics": {}
+    },
+    {
+      "test": "Integration Tools Compatibility",
+      "success": false,
+      "details": "Task extraction failed: 500",
+      "timestamp": "2025-08-26T19:34:07.215627",
+      "metrics": {}
+    },
+    {
+      "test": "Performance and Bottleneck Analysis",
+      "success": true,
+      "details": "Avg chunk time: 0.10s, Throughput: 37.96 chunks/s, Memory: +2.1MB",
+      "timestamp": "2025-08-26T19:34:07.612475",
+      "metrics": {
+        "concurrent_connections": 5,
+        "total_chunks_processed": 15,
+        "total_errors": 0,
+        "average_chunk_duration": 0.09749794006347656,
+        "throughput_chunks_per_second": 37.96036503507052,
+        "memory_increase_mb": 2.109375,
+        "cpu_percent": 0.0,
+        "total_test_duration": 0.39514899253845215
+      }
+    },
+    {
+      "test": "Code Quality and Error Handling",
+      "success": false,
+      "details": "Error scenarios handled: 2/4 (50.0%)",
+      "timestamp": "2025-08-26T19:34:07.640254",
+      "metrics": {
+        "error_handling_score": 0.5,
+        "scenarios_tested": 4,
+        "test_duration": 0.027423858642578125
+      }
+    }
+  ]
+}

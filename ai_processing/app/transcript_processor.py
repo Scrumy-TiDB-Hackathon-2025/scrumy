@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Tuple, Literal, Optional
+from typing import List, Tuple, Literal, Optional, Dict
 import logging
 import os
 from dotenv import load_dotenv
@@ -76,7 +76,7 @@ class TranscriptProcessor:
         self.db = DatabaseManager()
         self.active_clients = []  # Track active client sessions
 
-    async def process_transcript(self, text: str, model: str, model_name: str, chunk_size: int = 5000, overlap: int = 1000, custom_prompt: str = "") -> Tuple[int, List[str]]:
+    async def process_transcript(self, text: str, model: str, model_name: str, chunk_size: int = 5000, overlap: int = 1000, custom_prompt: str = "", participants: Optional[List[Dict]] = None) -> Tuple[int, List[str]]:
         """
         Process transcript text into chunks and generate structured summaries for each chunk using an AI model.
 
@@ -94,7 +94,7 @@ class TranscriptProcessor:
             - A list of JSON strings, where each string is the summary of a chunk.
         """
 
-        logger.info(f"Processing transcript (length {len(text)}) with model provider={model}, model_name={model_name}, chunk_size={chunk_size}, overlap={overlap}")
+        logger.info(f"Processing transcript (length {len(text)}) with model provider={model}, model_name={model_name}, chunk_size={chunk_size}, overlap={overlap}, participants={len(participants or [])}")
 
         all_json_data = []
 
@@ -122,8 +122,8 @@ class TranscriptProcessor:
             for i, chunk in enumerate(chunks):
                 logger.info(f"Processing chunk {i+1}/{num_chunks}...")
                 try:
-                    # Create the prompt
-                    prompt = self._create_prompt(chunk, custom_prompt)
+                    # Create the prompt with participant context
+                    prompt = self._create_prompt(chunk, custom_prompt, participants)
 
                     # Process based on model provider
                     if model == "claude":
@@ -150,7 +150,7 @@ class TranscriptProcessor:
                     except (json.JSONDecodeError, Exception) as e:
                         logger.error(f"Failed to parse response as JSON for chunk {i+1}: {e}")
                         # Create a fallback summary
-                        fallback_summary = self._create_fallback_summary(response_text)
+                        fallback_summary = self._create_fallback_summary(response_text, participants)
                         all_json_data.append(fallback_summary.model_dump_json())
 
                 except Exception as chunk_error:
@@ -163,9 +163,26 @@ class TranscriptProcessor:
             logger.error(f"Error during transcript processing: {str(e)}", exc_info=True)
             raise
 
-    def _create_prompt(self, chunk: str, custom_prompt: str) -> str:
-        """Create the prompt for AI processing."""
+    def _create_prompt(self, chunk: str, custom_prompt: str, participants: Optional[List[Dict]] = None) -> str:
+        """Create the prompt for AI processing with participant context."""
+        participant_context = ""
+        if participants:
+            participant_names = [p.get('name', 'Unknown') for p in participants]
+            participant_info = []
+            for p in participants:
+                role = "Host" if p.get('is_host', False) else "Participant"
+                participant_info.append(f"- {p.get('name', 'Unknown')} ({role})")
+            participant_context = f"""
+MEETING PARTICIPANTS (detected by system):
+{chr(10).join(participant_info)}
+Total participants: {len(participants)}
+
+Use these participant names when identifying speakers in the transcript. If you see these names mentioned or speaking, use the exact names from this list.
+"""
+
         return f"""Given the following meeting transcript chunk, extract the relevant information according to the required JSON structure. If a specific section (like Critical Deadlines) has no relevant information in this chunk, return an empty list for its 'blocks'. Ensure the output is only valid JSON data.
+
+{participant_context}
 
 IMPORTANT: Block types must be one of: 'text', 'bullet', 'heading1', 'heading2'
 - Use 'text' for regular paragraphs
@@ -293,13 +310,27 @@ Respond ONLY with valid JSON data, no additional text or formatting."""
             if client in self.active_clients:
                 self.active_clients.remove(client)
 
-    def _create_fallback_summary(self, text: str) -> SummaryResponse:
+    def _create_fallback_summary(self, text: str, participants: Optional[List[Dict]] = None) -> SummaryResponse:
         """Create a fallback summary when JSON parsing fails."""
+        # Create participant blocks from real participant data if available
+        participant_blocks = []
+        if participants:
+            for p in participants:
+                role = "Host" if p.get('is_host', False) else "Participant"
+                participant_blocks.append(
+                    Block(id=f"p_{p.get('id', 'unknown')}",
+                          type="bullet",
+                          content=f"{p.get('name', 'Unknown')} ({role})",
+                          color="")
+                )
+        else:
+            participant_blocks = [Block(id="p1", type="text", content="Unable to extract participant information", color="gray")]
+
         return SummaryResponse(
             MeetingName="Meeting Summary",
             People=People(
                 title="People",
-                blocks=[Block(id="p1", type="text", content="Unable to extract participant information", color="gray")]
+                blocks=participant_blocks
             ),
             SessionSummary=Section(
                 title="Session Summary",

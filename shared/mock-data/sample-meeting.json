@@ -6,6 +6,32 @@
     "created_at": "2025-01-08T10:00:00Z",
     "updated_at": "2025-01-08T11:30:00Z"
   },
+  "participants": [
+    {
+      "id": "participant_1",
+      "name": "John Smith",
+      "platform_id": "google_meet_user_123",
+      "status": "active",
+      "is_host": true,
+      "join_time": "2025-01-08T09:58:30Z"
+    },
+    {
+      "id": "participant_2",
+      "name": "Sarah Johnson",
+      "platform_id": "google_meet_user_456",
+      "status": "active",
+      "is_host": false,
+      "join_time": "2025-01-08T10:00:15Z"
+    },
+    {
+      "id": "participant_3",
+      "name": "Mike Chen",
+      "platform_id": "google_meet_user_789",
+      "status": "active",
+      "is_host": false,
+      "join_time": "2025-01-08T10:02:45Z"
+    }
+  ],
   "transcripts": [
     {
       "id": "transcript_001",
@@ -37,21 +63,27 @@
       {
         "id": "speaker_1",
         "name": "John Smith",
-        "segments": ["Good morning everyone, let's start our sprint planning meeting."],
+        "segments": [
+          "Good morning everyone, let's start our sprint planning meeting."
+        ],
         "total_words": 10,
         "characteristics": "Meeting facilitator, clear speaking style"
       },
       {
         "id": "speaker_2",
         "name": "Sarah Johnson",
-        "segments": ["Thanks John. I've prepared the backlog items for review."],
+        "segments": [
+          "Thanks John. I've prepared the backlog items for review."
+        ],
         "total_words": 9,
         "characteristics": "Product owner, organized approach"
       },
       {
         "id": "speaker_3",
         "name": "Mike Chen",
-        "segments": ["Great. Let's prioritize the user authentication feature first."],
+        "segments": [
+          "Great. Let's prioritize the user authentication feature first."
+        ],
         "total_words": 8,
         "characteristics": "Technical lead, decisive communication"
       }
@@ -143,7 +175,10 @@
           "name": "Sarah Johnson",
           "role": "Product Owner",
           "participation_level": "high",
-          "key_contributions": ["Backlog preparation", "Requirements clarification"]
+          "key_contributions": [
+            "Backlog preparation",
+            "Requirements clarification"
+          ]
         },
         {
           "name": "Mike Chen",
