@@ -153,7 +153,7 @@ class ChromeExtensionMockServerTest:
                     "name": "John Doe",
                     "platform_id": "google_meet_user_123",
                     "status": "active",
-                    "is_host": true,
+                    "is_host": True,
                     "join_time": "2025-01-09T10:00:00Z"
                 },
                 {
@@ -161,7 +161,7 @@ class ChromeExtensionMockServerTest:
                     "name": "Jane Smith",
                     "platform_id": "google_meet_user_456",
                     "status": "active",
-                    "is_host": false,
+                    "is_host": False,
                     "join_time": "2025-01-09T10:00:30Z"
                 }
             ],
@@ -203,7 +203,7 @@ class ChromeExtensionMockServerTest:
                     "name": "Bob Johnson",
                     "platform_id": "google_meet_user_789",
                     "status": "active",
-                    "is_host": false,
+                    "is_host": False,
                     "join_time": datetime.now(timezone.utc).isoformat()
                 },
                 "total_participants": 3
@@ -239,7 +239,7 @@ class ChromeExtensionMockServerTest:
                     "name": "Test User",
                     "platform_id": "zoom_user_123",
                     "status": "active",
-                    "is_host": true,
+                    "is_host": True,
                     "join_time": datetime.now(timezone.utc).isoformat()
                 }
             ],

@@ -409,7 +409,7 @@ class TiDBDatabase(DatabaseInterface):
 
             # Get transcripts
             cursor.execute("""
-                SELECT transcript, timestamp, summary, action_items, key_points
+                SELECT id, transcript, timestamp, summary, action_items, key_points
                 FROM transcripts WHERE meeting_id = %s ORDER BY timestamp
             """, (meeting_id,))
 
@@ -425,6 +425,7 @@ class TiDBDatabase(DatabaseInterface):
                 "updated_at": meeting_data["updated_at"].isoformat() if meeting_data["updated_at"] else None,
                 "transcripts": [
                     {
+                        "id": t["id"],
                         "text": t["transcript"],
                         "timestamp": t["timestamp"],
                         "summary": t["summary"],

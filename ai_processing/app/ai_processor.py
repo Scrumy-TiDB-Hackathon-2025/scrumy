@@ -110,3 +110,7 @@ class AIProcessor:
     "status": "fallback_mode",
     "note": "This is a fallback response. {error_msg if error_msg else 'API key not configured.'}"
 }}'''
+
+    async def process_text(self, text: str, system_prompt: str = "") -> str:
+        """Process text using AI model or fallback mode"""
+        return await self.call_ollama(text, system_prompt)

@@ -336,6 +336,14 @@ class AIProcessingIntegrationAdapter:
         """Convert AI processing tasks to shared contract format"""
         tasks = []
         for i, task in enumerate(tasks_data):
+            # Skip None or invalid tasks
+            if task is None or not isinstance(task, dict):
+                continue
+
+            # Skip tasks without required fields
+            if not task.get("title") and not task.get("description"):
+                continue
+
             task_def = TaskDefinition(
                 id=task.get("id", f"task_{meeting_id}_{i}"),
                 title=task.get("title", ""),

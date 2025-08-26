@@ -339,7 +339,7 @@ class SQLiteDatabase(DatabaseInterface):
 
                 # Get transcripts
                 cursor.execute("""
-                    SELECT transcript, timestamp, summary, action_items, key_points
+                    SELECT id, transcript, timestamp, summary, action_items, key_points
                     FROM transcripts WHERE meeting_id = ? ORDER BY timestamp
                 """, (meeting_id,))
 
@@ -355,11 +355,12 @@ class SQLiteDatabase(DatabaseInterface):
                     "updated_at": meeting_data[3],
                     "transcripts": [
                         {
-                            "text": t[0],
-                            "timestamp": t[1],
-                            "summary": t[2],
-                            "action_items": t[3],
-                            "key_points": t[4]
+                            "id": t[0],
+                            "text": t[1],
+                            "timestamp": t[2],
+                            "summary": t[3],
+                            "action_items": t[4],
+                            "key_points": t[5]
                         }
                         for t in transcripts
                     ],
