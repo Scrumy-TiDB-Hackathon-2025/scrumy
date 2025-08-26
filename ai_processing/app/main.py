@@ -1,4 +1,6 @@
 import subprocess
+import asyncio
+import httpx
 from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -74,47 +76,88 @@ async def health_check():
 @app.post("/transcribe")
 async def transcribe(file: UploadFile = File(...)):
     try:
-        whisper_executable = "./whisper-server-package/main"
+        # Check if whisper server components exist
+        whisper_server_path = "./whisper-server-package/main"
         model_path = './whisper-server-package/models/for-tests-ggml-base.en.bin'
 
-        if not os.path.isfile(whisper_executable):
-            raise HTTPException(status_code=500, detail="Whisper executable not found")
+        if not os.path.isfile(whisper_server_path):
+            raise HTTPException(status_code=500, detail="Whisper server executable not found")
         if not os.path.isfile(model_path):
             raise HTTPException(status_code=500, detail="Whisper model not found")
 
+        # Start whisper server if not running
+        whisper_server_url = "http://127.0.0.1:8080"
+
+        # Check if server is already running
+        server_running = False
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(f"{whisper_server_url}/")
+                server_running = True
+                logger.info("Whisper server already running")
+        except:
+            # Server not running, start it
+            logger.info("Starting Whisper server...")
+            server_process = subprocess.Popen([
+                whisper_server_path,
+                "-m", model_path,
+                "--host", "127.0.0.1",
+                "--port", "8080",
+                "--convert"
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+            # Wait for server to start with retries
+            max_retries = 15
+            for i in range(max_retries):
+                await asyncio.sleep(2)
+                try:
+                    async with httpx.AsyncClient(timeout=5.0) as client:
+                        response = await client.get(f"{whisper_server_url}/")
+                        server_running = True
+                        logger.info(f"Whisper server started after {i+1} attempts")
+                        break
+                except:
+                    logger.debug(f"Server not ready yet, attempt {i+1}/{max_retries}")
+                    continue
+
+        if not server_running:
+            raise HTTPException(status_code=500, detail="Failed to start Whisper server")
+
+        # Save uploaded file temporarily
         temp_audio_path = f"temp_{file.filename}"
         with open(temp_audio_path, "wb") as f:
             f.write(await file.read())
 
-        result = subprocess.run(
-            [
-                whisper_executable,
-                "-m", model_path,
-                "--output-json",
-                "--output-file", "-",
-                "--no-gpu",
-                temp_audio_path,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-
-        os.remove(temp_audio_path)
-
-        if result.returncode != 0:
-            raise HTTPException(status_code=500, detail=result.stderr)
-
-        # Parse JSON output from whisper
         try:
-            parsed = json.loads(result.stdout)
-            transcript_text = parsed.get("text", "").strip()
-        except json.JSONDecodeError:
-            transcript_text = result.stdout.strip()
+            # Send transcription request to whisper server
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                with open(temp_audio_path, "rb") as f:
+                    files = {"file": (file.filename, f, file.content_type or "audio/wav")}
+                    response = await client.post(
+                        f"{whisper_server_url}/inference",
+                        files=files
+                    )
 
-        return {"transcript": transcript_text}
+            if response.status_code != 200:
+                raise HTTPException(status_code=500, detail=f"Whisper server error: {response.text}")
+
+            # Parse response - whisper server returns JSON with text field
+            try:
+                result = response.json()
+                transcript_text = result.get("text", "").strip()
+            except:
+                # Fallback to raw text response
+                transcript_text = response.text.strip()
+
+            return {"transcript": transcript_text}
+
+        finally:
+            # Clean up temporary file
+            if os.path.exists(temp_audio_path):
+                os.remove(temp_audio_path)
 
     except Exception as e:
+        logger.error(f"Transcription error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # Global database manager instance for meeting management endpoints
@@ -162,8 +205,8 @@ class TranscriptRequest(BaseModel):
     meeting_id: str
     chunk_size: Optional[int] = 5000
     overlap: Optional[int] = 1000
-    platform: Optional[str] = None  
-    timestamp: Optional[str] = None 
+    platform: Optional[str] = None
+    timestamp: Optional[str] = None
 
 class SummaryProcessor:
     """Handles the processing of summaries in a thread-safe way"""
@@ -516,7 +559,7 @@ async def save_model_config(request: SaveModelConfigRequest):
     await db.save_model_config(request.provider, request.model, request.whisperModel)
     if request.apiKey != None:
         await db.save_api_key(request.apiKey, request.provider)
-    return {"status": "success", "message": "Model configuration saved successfully"}  
+    return {"status": "success", "message": "Model configuration saved successfully"}
 
 @app.post("/process-complete-meeting")
 

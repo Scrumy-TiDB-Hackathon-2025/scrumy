@@ -7,6 +7,13 @@ FastAPI backend for meeting transcription and analysis
 - Real-time Whisper-based transcription with streaming support
 - Meeting analysis with LLMs (supports Claude, Groq, and Ollama)
 - REST API endpoints
+- Automated task extraction and integration with external tools
+
+## Documentation
+- [API Documentation](API_DOCUMENTATION.md) - Detailed API reference
+- [AI Processing Implementation Guide](AI_PROCESSING_IMPLEMENTATION_GUIDE.md) - Core implementation details
+- [AI Integration Guide](AI_INTEGRATION_GUIDE.md) - External service integration
+- [Transcription Troubleshooting](TRANSCRIPTION_TROUBLESHOOTING.md) - Solving audio transcription issues
 
 ## Requirements
 - Python 3.9+
@@ -232,6 +239,7 @@ The backend runs two services:
 - Ensure all ports (5167 for backend, 8178 for Whisper) are available
 - Verify API keys if using Claude or Groq
 - For Ollama, ensure the Ollama service is running and models are pulled
+- For transcription issues with audio files, see [Transcription Troubleshooting Guide](TRANSCRIPTION_TROUBLESHOOTING.md)
 - If build fails:
   - Ensure all dependencies (CMake, C++ compiler) are installed
   - Check if git submodules are properly initialized
