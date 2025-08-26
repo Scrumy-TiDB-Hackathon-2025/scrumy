@@ -5,7 +5,19 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "env:dev": "node scripts/switch-env.js dev",
+    "env:staging": "node scripts/switch-env.js staging",
+    "env:prod": "node scripts/switch-env.js prod",
+    "env:status": "node scripts/env-status.js",
+    "env:validate": "node scripts/validate-env.js",
+    "env:validate:connectivity": "node scripts/validate-env.js --test-connectivity",
+    "build:dev": "bash scripts/build-dev.sh",
+    "build:staging": "bash scripts/build-staging.sh",
+    "build:prod": "bash scripts/build-prod.sh",
+    "deploy:dev": "npm run build:dev && npm run start",
+    "deploy:staging": "npm run build:staging && npm run start",
+    "deploy:prod": "npm run build:prod && npm run start"
   },
   "dependencies": {
     "@radix-ui/react-popover": "^1.1.15",
