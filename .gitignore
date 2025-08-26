@@ -4,6 +4,11 @@
 # ================================
 
 # ----------------
+# Documentation
+# ----------------
+docs/legacy/
+
+# ----------------
 # Python Backend (AI Processing)
 # ----------------
 ai_processing/__pycache__/
