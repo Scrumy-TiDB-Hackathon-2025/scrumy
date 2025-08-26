@@ -1,0 +1,16 @@
+# Frontend Dashboard REST API Mock Server Requirements
+
+# Web framework
+Flask>=2.3.0
+Flask-CORS>=4.0.0
+
+# JSON handling and utilities
+python-dateutil>=2.8.2
+
+# Development and testing
+pytest>=7.4.0
+pytest-flask>=1.2.0
+requests>=2.31.0
+
+# Optional: For enhanced logging and monitoring
+coloredlogs>=15.0.1

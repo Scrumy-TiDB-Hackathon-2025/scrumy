@@ -19,6 +19,7 @@
  * @property {'active'|'inactive'|'left'} status - Participant status
  * @property {boolean} is_host - Whether participant is meeting host
  * @property {string} join_time - ISO timestamp of when participant joined
+ * @property {string} [leave_time] - ISO timestamp of when participant left (optional)
  */
 
 /**

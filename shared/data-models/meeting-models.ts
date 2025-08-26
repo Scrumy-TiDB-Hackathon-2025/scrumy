@@ -97,9 +97,6 @@ export interface MeetingSummary {
   participants: {
     participants: Array<{
       name: string;
-      role: string;
-      participation_level: "high" | "medium" | "low";
-      key_contributions: string[];
     }>;
     meeting_leader: string;
     total_participants: number;
@@ -115,6 +112,7 @@ export interface Participant {
   status: "active" | "inactive" | "left";
   is_host: boolean;
   join_time: string;
+  leave_time?: string;
 }
 
 export interface AudioChunk {

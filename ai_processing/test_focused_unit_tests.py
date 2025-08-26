@@ -24,7 +24,7 @@ try:
     from app.meeting_summarizer import MeetingSummarizer
     from app.task_extractor import TaskExtractor
     from app.integrated_processor import IntegratedAIProcessor
-    from app.integration_adapter import AIProcessingIntegrationAdapter, get_integration_adapter
+    from app.integration_adapter import AIProcessingIntegrationAdapter, get_integration_adapter, ParticipantData
     AI_MODULES_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: Could not import AI modules: {e}")
@@ -296,7 +296,11 @@ class TestIntegrationAdapter(unittest.TestCase):
         meeting_id = "test_meeting_456"
         meeting_title = "Test Meeting"
         platform = "google-meet"
-        participants = ["Alice", "Bob"]
+        participants = [
+            ParticipantData("p1", "Alice", "platform_1", "active", True, "2025-01-09T10:00:00Z"),
+            ParticipantData("p2", "Bob", "platform_2", "active", False, "2025-01-09T10:01:00Z")
+        ]
+        participant_count = 2
         transcript = "This is a test transcript."
 
         summary_data = {
@@ -321,7 +325,7 @@ class TestIntegrationAdapter(unittest.TestCase):
         ]
 
         result = await self.adapter.process_meeting_complete(
-            meeting_id, meeting_title, platform, participants, transcript,
+            meeting_id, meeting_title, platform, participants, participant_count, transcript,
             summary_data, tasks_data, speakers_data
         )
 
@@ -418,11 +422,16 @@ class TestSharedContractCompliance(unittest.TestCase):
 
         from app.integration_adapter import MeetingData
 
+        participants = [
+            ParticipantData("p1", "Alice", "platform_1", "active", True, "2025-01-09T10:00:00Z"),
+            ParticipantData("p2", "Bob", "platform_2", "active", False, "2025-01-09T10:01:00Z")
+        ]
         meeting_data = MeetingData(
             meeting_id="test_123",
             title="Test Meeting",
             platform="google-meet",
-            participants=["Alice", "Bob"],
+            participants=participants,
+            participant_count=2,
             duration="30 minutes",
             transcript="Test transcript",
             created_at=datetime.now().isoformat()
@@ -534,7 +543,7 @@ class TestErrorHandling(unittest.TestCase):
         adapter.client.process_complete_meeting = AsyncMock(side_effect=Exception("Integration failed"))
 
         result = await adapter.process_meeting_complete(
-            "test_meeting", "Test", "google-meet", [], "", {}, [], []
+            "test_meeting", "Test", "google-meet", [], 0, "", {}, [], []
         )
 
         self.assertFalse(result.get('success', True))

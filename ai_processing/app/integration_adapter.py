@@ -34,11 +34,22 @@ class Priority(Enum):
     HIGH = "high"
 
 @dataclass
+class ParticipantData:
+    id: str
+    name: str
+    platform_id: str
+    status: str
+    is_host: bool
+    join_time: str
+    leave_time: Optional[str] = None
+
+@dataclass
 class MeetingData:
     meeting_id: str
     title: str
     platform: str
-    participants: List[str]
+    participants: List[ParticipantData]
+    participant_count: int
     duration: str
     transcript: str
     created_at: str
@@ -128,7 +139,8 @@ class AIProcessingIntegrationAdapter:
                                      meeting_id: str,
                                      meeting_title: str,
                                      platform: str,
-                                     participants: List[str],
+                                     participants: List[ParticipantData],
+                                     participant_count: int,
                                      transcript: str,
                                      summary_data: Dict,
                                      tasks_data: List[Dict],
@@ -142,7 +154,8 @@ class AIProcessingIntegrationAdapter:
             meeting_id: Unique meeting identifier
             meeting_title: Meeting title
             platform: Meeting platform (google-meet, zoom, etc.)
-            participants: List of participant names
+            participants: List of participant data objects
+            participant_count: Number of participants
             transcript: Full meeting transcript
             summary_data: Meeting summary from AI processing
             tasks_data: Extracted tasks from AI processing
@@ -160,6 +173,7 @@ class AIProcessingIntegrationAdapter:
                 title=meeting_title,
                 platform=platform,
                 participants=participants,
+                participant_count=participant_count,
                 duration=self._estimate_duration(transcript),
                 transcript=transcript,
                 created_at=datetime.now().isoformat()
@@ -202,7 +216,7 @@ class AIProcessingIntegrationAdapter:
     async def create_tasks_external(self,
                                   meeting_id: str,
                                   meeting_title: str,
-                                  participants: List[str],
+                                  participants: List[ParticipantData],
                                   tasks_data: List[Dict],
                                   options: Dict[str, bool] = None) -> Dict:
         """
@@ -211,7 +225,7 @@ class AIProcessingIntegrationAdapter:
         Args:
             meeting_id: Associated meeting ID
             meeting_title: Meeting title for context
-            participants: Meeting participants
+            participants: Meeting participant data objects
             tasks_data: Tasks to create
             options: Creation options
 
@@ -479,7 +493,8 @@ def get_integration_adapter(use_mock: bool = None) -> AIProcessingIntegrationAda
 async def notify_meeting_processed(meeting_id: str,
                                  meeting_title: str,
                                  platform: str,
-                                 participants: List[str],
+                                 participants: List[ParticipantData],
+                                 participant_count: int,
                                  transcript: str,
                                  summary_data: Dict,
                                  tasks_data: List[Dict],
@@ -497,6 +512,7 @@ async def notify_meeting_processed(meeting_id: str,
         meeting_title=meeting_title,
         platform=platform,
         participants=participants,
+        participant_count=participant_count,
         transcript=transcript,
         summary_data=summary_data,
         tasks_data=tasks_data,
@@ -507,7 +523,7 @@ async def notify_meeting_processed(meeting_id: str,
 
 async def create_external_tasks(meeting_id: str,
                               meeting_title: str,
-                              participants: List[str],
+                              participants: List[ParticipantData],
                               tasks_data: List[Dict],
                               **kwargs) -> Dict:
     """
@@ -535,7 +551,11 @@ if __name__ == "__main__":
         meeting_id = "test_meeting_123"
         meeting_title = "Test Sprint Planning"
         platform = "google-meet"
-        participants = ["John", "Sarah", "Mike"]
+        participants = [
+            ParticipantData("p1", "John", "platform_1", "active", True, "2025-01-09T10:00:00Z"),
+            ParticipantData("p2", "Sarah", "platform_2", "active", False, "2025-01-09T10:01:00Z"),
+            ParticipantData("p3", "Mike", "platform_3", "active", False, "2025-01-09T10:02:00Z")
+        ]
         transcript = "This is a test meeting transcript with some content to process."
 
         summary_data = {
@@ -566,7 +586,7 @@ if __name__ == "__main__":
 
         # Test meeting processing
         result = await adapter.process_meeting_complete(
-            meeting_id, meeting_title, platform, participants, transcript,
+            meeting_id, meeting_title, platform, participants, len(participants), transcript,
             summary_data, tasks_data, speakers_data
         )
 

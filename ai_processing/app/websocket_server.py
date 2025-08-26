@@ -18,6 +18,7 @@ from app.ai_processor import AIProcessor
 from app.speaker_identifier import SpeakerIdentifier
 from app.meeting_summarizer import MeetingSummarizer
 from app.task_extractor import TaskExtractor
+from app.integration_adapter import ParticipantData, notify_meeting_processed
 import subprocess
 
 logger = logging.getLogger(__name__)
@@ -162,6 +163,26 @@ class MeetingSession:
             return [p.get('name', 'Unknown') for p in self.participant_data.values() if p.get('name')]
         # Fallback to legacy participant set
         return list(self.participants)
+
+    def get_participant_data_objects(self) -> List[ParticipantData]:
+        """Get list of ParticipantData objects for integration adapter"""
+        participant_objects = []
+        for participant_dict in self.participant_data.values():
+            try:
+                participant_obj = ParticipantData(
+                    id=participant_dict.get('id', ''),
+                    name=participant_dict.get('name', ''),
+                    platform_id=participant_dict.get('platform_id', ''),
+                    status=participant_dict.get('status', 'unknown'),
+                    is_host=participant_dict.get('is_host', False),
+                    join_time=participant_dict.get('join_time', ''),
+                    leave_time=participant_dict.get('leave_time')
+                )
+                participant_objects.append(participant_obj)
+            except Exception as e:
+                logger.warning(f"Could not convert participant data to object: {e}")
+                continue
+        return participant_objects
 
     async def identify_speakers(self, recent_transcript: str, participant_context: Optional[List[str]] = None) -> Dict:
         """Identify speakers in recent transcript"""
@@ -431,6 +452,24 @@ class WebSocketManager:
                 session.cumulative_transcript,
                 {'participants': list(session.participants)}
             )
+
+            # Notify integration systems with proper participant data
+            try:
+                participant_objects = session.get_participant_data_objects()
+                await notify_meeting_processed(
+                    meeting_id=session.meeting_id,
+                    meeting_title=f"Meeting {session.meeting_id}",
+                    platform=session.platform,
+                    participants=participant_objects,
+                    participant_count=session.participant_count,
+                    transcript=session.cumulative_transcript,
+                    summary_data=summary,
+                    tasks_data=tasks,
+                    speakers_data=[]
+                )
+                logger.info(f"Notified integration systems for meeting {session.meeting_id}")
+            except Exception as e:
+                logger.warning(f"Failed to notify integration systems: {e}")
 
             # Send final summary
             await self.send_message(websocket, {

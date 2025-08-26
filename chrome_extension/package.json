@@ -11,7 +11,13 @@
     "test:rest": "node mocks/mockrestserver.js",
     "test:core": "node test/core.js",
     "env:dev": "node switch-env.js dev",
-    "env:prod": "node switch-env.js prod"
+    "env:prod": "node switch-env.js prod",
+    "mocks:start": "node mocks/start-mock-servers.js",
+    "mocks:stop": "node mocks/start-mock-servers.js --stop",
+    "mocks:status": "node mocks/start-mock-servers.js --status",
+    "mocks:test": "node mocks/test-mock-servers.js",
+    "mocks:test:ws": "node mocks/test-mock-servers.js --websocket-only",
+    "mocks:test:rest": "node mocks/test-mock-servers.js --rest-only"
   },
   "dependencies": {
     "ws": "^8.18.3"

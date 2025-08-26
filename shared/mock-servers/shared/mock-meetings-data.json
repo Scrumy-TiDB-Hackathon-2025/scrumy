@@ -1,0 +1,629 @@
+{
+  "meetings": [
+    {
+      "id": "meeting_001",
+      "title": "Sprint Planning - Q1 2025",
+      "platform": "google-meet",
+      "meeting_url": "https://meet.google.com/abc-def-ghi",
+      "status": "completed",
+      "created_at": "2025-01-08T10:00:00Z",
+      "updated_at": "2025-01-08T11:30:00Z",
+      "duration_minutes": 90,
+      "participants": [
+        {
+          "id": "participant_1",
+          "name": "John Smith",
+          "platform_id": "google_meet_user_123",
+          "status": "active",
+          "is_host": true,
+          "join_time": "2025-01-08T09:58:30Z",
+          "leave_time": "2025-01-08T11:30:00Z"
+        },
+        {
+          "id": "participant_2",
+          "name": "Sarah Johnson",
+          "platform_id": "google_meet_user_456",
+          "status": "active",
+          "is_host": false,
+          "join_time": "2025-01-08T10:00:15Z",
+          "leave_time": "2025-01-08T11:25:00Z"
+        },
+        {
+          "id": "participant_3",
+          "name": "Mike Chen",
+          "platform_id": "google_meet_user_789",
+          "status": "active",
+          "is_host": false,
+          "join_time": "2025-01-08T10:02:45Z",
+          "leave_time": "2025-01-08T11:30:00Z"
+        }
+      ],
+      "participant_count": 3
+    },
+    {
+      "id": "meeting_002",
+      "title": "Daily Standup - Backend Team",
+      "platform": "zoom",
+      "meeting_url": "https://zoom.us/j/1234567890",
+      "status": "completed",
+      "created_at": "2025-01-09T09:00:00Z",
+      "updated_at": "2025-01-09T09:30:00Z",
+      "duration_minutes": 30,
+      "participants": [
+        {
+          "id": "participant_4",
+          "name": "Alex Rodriguez",
+          "platform_id": "zoom_user_111",
+          "status": "active",
+          "is_host": true,
+          "join_time": "2025-01-09T08:59:00Z",
+          "leave_time": "2025-01-09T09:30:00Z"
+        },
+        {
+          "id": "participant_5",
+          "name": "Emma Watson",
+          "platform_id": "zoom_user_222",
+          "status": "active",
+          "is_host": false,
+          "join_time": "2025-01-09T09:01:00Z",
+          "leave_time": "2025-01-09T09:28:00Z"
+        },
+        {
+          "id": "participant_6",
+          "name": "David Kim",
+          "platform_id": "zoom_user_333",
+          "status": "active",
+          "is_host": false,
+          "join_time": "2025-01-09T09:00:30Z",
+          "leave_time": "2025-01-09T09:30:00Z"
+        }
+      ],
+      "participant_count": 3
+    },
+    {
+      "id": "meeting_003",
+      "title": "Product Demo - Client Presentation",
+      "platform": "teams",
+      "meeting_url": "https://teams.microsoft.com/l/meetup-join/xxx",
+      "status": "in_progress",
+      "created_at": "2025-01-09T14:00:00Z",
+      "updated_at": "2025-01-09T14:45:00Z",
+      "duration_minutes": null,
+      "participants": [
+        {
+          "id": "participant_7",
+          "name": "Lisa Park",
+          "platform_id": "teams_user_aaa",
+          "status": "active",
+          "is_host": true,
+          "join_time": "2025-01-09T13:58:00Z",
+          "leave_time": null
+        },
+        {
+          "id": "participant_8",
+          "name": "Robert Taylor",
+          "platform_id": "teams_user_bbb",
+          "status": "active",
+          "is_host": false,
+          "join_time": "2025-01-09T14:00:00Z",
+          "leave_time": null
+        },
+        {
+          "id": "participant_9",
+          "name": "Jennifer Liu",
+          "platform_id": "teams_user_ccc",
+          "status": "active",
+          "is_host": false,
+          "join_time": "2025-01-09T14:02:00Z",
+          "leave_time": null
+        },
+        {
+          "id": "participant_10",
+          "name": "Client Representative",
+          "platform_id": "teams_user_ddd",
+          "status": "active",
+          "is_host": false,
+          "join_time": "2025-01-09T14:01:00Z",
+          "leave_time": null
+        }
+      ],
+      "participant_count": 4
+    }
+  ],
+  "transcripts": {
+    "meeting_001": [
+      {
+        "id": "transcript_001",
+        "meeting_id": "meeting_001",
+        "text": "Good morning everyone, let's start our sprint planning meeting. We have a lot to cover today.",
+        "timestamp": "2025-01-08T10:00:00Z",
+        "speaker": "John Smith",
+        "speaker_id": "participant_1",
+        "confidence": 0.95,
+        "chunk_id": 1
+      },
+      {
+        "id": "transcript_002",
+        "meeting_id": "meeting_001",
+        "text": "Thanks John. I've prepared the backlog items for review. We have 15 stories ready for estimation.",
+        "timestamp": "2025-01-08T10:00:30Z",
+        "speaker": "Sarah Johnson",
+        "speaker_id": "participant_2",
+        "confidence": 0.92,
+        "chunk_id": 2
+      },
+      {
+        "id": "transcript_003",
+        "meeting_id": "meeting_001",
+        "text": "Great. Let's prioritize the user authentication feature first. It's a critical foundation for everything else.",
+        "timestamp": "2025-01-08T10:01:00Z",
+        "speaker": "Mike Chen",
+        "speaker_id": "participant_3",
+        "confidence": 0.88,
+        "chunk_id": 3
+      },
+      {
+        "id": "transcript_004",
+        "meeting_id": "meeting_001",
+        "text": "I agree with Mike. The authentication system will unlock several other features. I estimate this at 8 story points.",
+        "timestamp": "2025-01-08T10:01:30Z",
+        "speaker": "John Smith",
+        "speaker_id": "participant_1",
+        "confidence": 0.91,
+        "chunk_id": 4
+      },
+      {
+        "id": "transcript_005",
+        "meeting_id": "meeting_001",
+        "text": "That sounds reasonable. We should also consider the OAuth integration with Google and GitHub providers.",
+        "timestamp": "2025-01-08T10:02:00Z",
+        "speaker": "Sarah Johnson",
+        "speaker_id": "participant_2",
+        "confidence": 0.89,
+        "chunk_id": 5
+      }
+    ],
+    "meeting_002": [
+      {
+        "id": "transcript_006",
+        "meeting_id": "meeting_002",
+        "text": "Good morning team. Let's do our daily standup. Alex, can you start us off?",
+        "timestamp": "2025-01-09T09:00:00Z",
+        "speaker": "Alex Rodriguez",
+        "speaker_id": "participant_4",
+        "confidence": 0.93,
+        "chunk_id": 1
+      },
+      {
+        "id": "transcript_007",
+        "meeting_id": "meeting_002",
+        "text": "Yesterday I completed the API endpoint for user profiles. Today I'm working on the validation middleware.",
+        "timestamp": "2025-01-09T09:00:15Z",
+        "speaker": "Emma Watson",
+        "speaker_id": "participant_5",
+        "confidence": 0.95,
+        "chunk_id": 2
+      },
+      {
+        "id": "transcript_008",
+        "meeting_id": "meeting_002",
+        "text": "I finished the database schema updates and I'm starting on the migration scripts today.",
+        "timestamp": "2025-01-09T09:00:45Z",
+        "speaker": "David Kim",
+        "speaker_id": "participant_6",
+        "confidence": 0.9,
+        "chunk_id": 3
+      }
+    ],
+    "meeting_003": [
+      {
+        "id": "transcript_009",
+        "meeting_id": "meeting_003",
+        "text": "Welcome everyone to our product demonstration. I'm excited to show you what we've built.",
+        "timestamp": "2025-01-09T14:00:00Z",
+        "speaker": "Lisa Park",
+        "speaker_id": "participant_7",
+        "confidence": 0.96,
+        "chunk_id": 1
+      },
+      {
+        "id": "transcript_010",
+        "meeting_id": "meeting_003",
+        "text": "Thank you Lisa. We're very interested to see the new features in action.",
+        "timestamp": "2025-01-09T14:00:30Z",
+        "speaker": "Client Representative",
+        "speaker_id": "participant_10",
+        "confidence": 0.87,
+        "chunk_id": 2
+      }
+    ]
+  },
+  "speakers": {
+    "meeting_001": {
+      "speakers": [
+        {
+          "id": "participant_1",
+          "name": "John Smith",
+          "segments": [
+            "Good morning everyone, let's start our sprint planning meeting. We have a lot to cover today.",
+            "I agree with Mike. The authentication system will unlock several other features. I estimate this at 8 story points."
+          ],
+          "total_words": 45,
+          "characteristics": "Meeting facilitator, clear speaking style, decisive leadership"
+        },
+        {
+          "id": "participant_2",
+          "name": "Sarah Johnson",
+          "segments": [
+            "Thanks John. I've prepared the backlog items for review. We have 15 stories ready for estimation.",
+            "That sounds reasonable. We should also consider the OAuth integration with Google and GitHub providers."
+          ],
+          "total_words": 38,
+          "characteristics": "Product owner, organized approach, detail-oriented"
+        },
+        {
+          "id": "participant_3",
+          "name": "Mike Chen",
+          "segments": [
+            "Great. Let's prioritize the user authentication feature first. It's a critical foundation for everything else."
+          ],
+          "total_words": 18,
+          "characteristics": "Technical lead, decisive communication, strategic thinking"
+        }
+      ],
+      "confidence": 0.92,
+      "total_speakers": 3,
+      "identification_method": "explicit_labels"
+    },
+    "meeting_002": {
+      "speakers": [
+        {
+          "id": "participant_4",
+          "name": "Alex Rodriguez",
+          "segments": [
+            "Good morning team. Let's do our daily standup. Alex, can you start us off?"
+          ],
+          "total_words": 15,
+          "characteristics": "Team lead, encouraging communication style"
+        },
+        {
+          "id": "participant_5",
+          "name": "Emma Watson",
+          "segments": [
+            "Yesterday I completed the API endpoint for user profiles. Today I'm working on the validation middleware."
+          ],
+          "total_words": 17,
+          "characteristics": "Backend developer, progress-focused updates"
+        },
+        {
+          "id": "participant_6",
+          "name": "David Kim",
+          "segments": [
+            "I finished the database schema updates and I'm starting on the migration scripts today."
+          ],
+          "total_words": 15,
+          "characteristics": "Database specialist, methodical approach"
+        }
+      ],
+      "confidence": 0.93,
+      "total_speakers": 3,
+      "identification_method": "participant_context"
+    },
+    "meeting_003": {
+      "speakers": [
+        {
+          "id": "participant_7",
+          "name": "Lisa Park",
+          "segments": [
+            "Welcome everyone to our product demonstration. I'm excited to show you what we've built."
+          ],
+          "total_words": 16,
+          "characteristics": "Product manager, enthusiastic presenter"
+        },
+        {
+          "id": "participant_10",
+          "name": "Client Representative",
+          "segments": [
+            "Thank you Lisa. We're very interested to see the new features in action."
+          ],
+          "total_words": 14,
+          "characteristics": "External stakeholder, professional engagement"
+        }
+      ],
+      "confidence": 0.92,
+      "total_speakers": 2,
+      "identification_method": "ai_inference"
+    }
+  },
+  "summaries": {
+    "meeting_001": {
+      "meeting_id": "meeting_001",
+      "meeting_title": "Sprint Planning - Q1 2025",
+      "executive_summary": {
+        "overview": "Team conducted comprehensive sprint planning for Q1 2025, focusing on user authentication system and core platform features. Strong consensus on technical priorities and implementation approach.",
+        "key_outcomes": [
+          "Prioritized user authentication feature as sprint foundation",
+          "Estimated authentication system at 8 story points",
+          "Defined OAuth integration requirements (Google, GitHub)",
+          "Established sprint goals and timeline framework",
+          "Assigned initial technical ownership and responsibilities"
+        ],
+        "business_impact": "Critical foundation for user management system enabling future feature development",
+        "urgency_level": "high",
+        "follow_up_required": true
+      },
+      "key_decisions": {
+        "decisions": [
+          {
+            "decision": "Prioritize user authentication feature for current sprint",
+            "rationale": "Authentication system is foundational requirement for all user-facing features",
+            "impact": "Affects timeline and dependencies for subsequent user-related development",
+            "timeline": "Complete by end of sprint (2 weeks)",
+            "confidence": 0.95,
+            "participants_involved": [
+              "John Smith",
+              "Sarah Johnson",
+              "Mike Chen"
+            ]
+          },
+          {
+            "decision": "Implement OAuth 2.0 with Google and GitHub providers",
+            "rationale": "Industry standard approach providing familiar user experience",
+            "impact": "Reduces custom authentication complexity and improves user adoption",
+            "timeline": "Include in authentication epic",
+            "confidence": 0.9,
+            "participants_involved": ["Mike Chen", "Sarah Johnson"]
+          }
+        ],
+        "total_decisions": 2,
+        "consensus_level": "unanimous"
+      },
+      "discussion_topics": {
+        "topics": [
+          {
+            "topic": "User Authentication Implementation Strategy",
+            "category": "technical",
+            "discussion_depth": "extensive",
+            "resolution_status": "resolved",
+            "key_points": [
+              "OAuth 2.0 integration approach",
+              "Support for Google and GitHub providers",
+              "Security considerations and best practices",
+              "Integration with existing user profile system"
+            ],
+            "participants": ["John Smith", "Sarah Johnson", "Mike Chen"],
+            "duration_minutes": 25
+          },
+          {
+            "topic": "Sprint Capacity and Story Point Estimation",
+            "category": "planning",
+            "discussion_depth": "moderate",
+            "resolution_status": "resolved",
+            "key_points": [
+              "8-point estimation for authentication system",
+              "Team velocity considerations",
+              "Buffer time for integration testing"
+            ],
+            "participants": ["John Smith", "Sarah Johnson"],
+            "duration_minutes": 15
+          }
+        ],
+        "primary_focus": "Technical architecture and sprint planning",
+        "topic_distribution": {
+          "technical": 65,
+          "planning": 25,
+          "process": 10
+        }
+      },
+      "next_steps": {
+        "next_steps": [
+          {
+            "action": "Design and implement OAuth 2.0 authentication flow",
+            "owner": "Mike Chen",
+            "deadline": "2025-01-15",
+            "priority": "high",
+            "dependencies": ["API design approval", "Security review"],
+            "estimated_hours": 32,
+            "status": "pending"
+          },
+          {
+            "action": "Review and approve authentication flow designs",
+            "owner": "Sarah Johnson",
+            "deadline": "2025-01-12",
+            "priority": "medium",
+            "dependencies": ["Initial design completion"],
+            "estimated_hours": 8,
+            "status": "pending"
+          },
+          {
+            "action": "Set up OAuth provider configurations",
+            "owner": "John Smith",
+            "deadline": "2025-01-13",
+            "priority": "medium",
+            "dependencies": ["Provider account setup"],
+            "estimated_hours": 4,
+            "status": "pending"
+          }
+        ],
+        "next_meeting": {
+          "scheduled": true,
+          "date": "2025-01-15T10:00:00Z",
+          "purpose": "Sprint review and retrospective",
+          "attendees": ["John Smith", "Sarah Johnson", "Mike Chen"]
+        },
+        "total_actions": 3
+      },
+      "participants": {
+        "participants": [
+          {
+            "name": "John Smith"
+          },
+          {
+            "name": "Sarah Johnson"
+          },
+          {
+            "name": "Mike Chen"
+          }
+        ],
+        "meeting_leader": "John Smith",
+        "total_participants": 3,
+        "participation_balance": "balanced"
+      },
+      "summary_generated_at": "2025-01-08T11:30:00Z"
+    },
+    "meeting_002": {
+      "meeting_id": "meeting_002",
+      "meeting_title": "Daily Standup - Backend Team",
+      "executive_summary": {
+        "overview": "Daily standup focused on backend development progress with clear updates on API development, validation, and database work.",
+        "key_outcomes": [
+          "User profile API endpoint completed",
+          "Database schema updates finished",
+          "Clear task assignments for current day"
+        ],
+        "business_impact": "Steady progress on core backend infrastructure",
+        "urgency_level": "medium",
+        "follow_up_required": false
+      },
+      "key_decisions": {
+        "decisions": [
+          {
+            "decision": "Proceed with validation middleware implementation",
+            "rationale": "Natural progression after API endpoint completion",
+            "impact": "Improves data quality and API security",
+            "timeline": "Today",
+            "confidence": 0.95,
+            "participants_involved": ["Emma Watson"]
+          }
+        ],
+        "total_decisions": 1,
+        "consensus_level": "unanimous"
+      },
+      "next_steps": {
+        "next_steps": [
+          {
+            "action": "Complete validation middleware",
+            "owner": "Emma Watson",
+            "deadline": "2025-01-09",
+            "priority": "high",
+            "dependencies": [],
+            "estimated_hours": 6,
+            "status": "in_progress"
+          },
+          {
+            "action": "Finish migration scripts",
+            "owner": "David Kim",
+            "deadline": "2025-01-09",
+            "priority": "high",
+            "dependencies": [],
+            "estimated_hours": 8,
+            "status": "in_progress"
+          }
+        ],
+        "total_actions": 2
+      },
+      "participants": {
+        "participants": [
+          {
+            "name": "Alex Rodriguez"
+          },
+          {
+            "name": "Emma Watson"
+          },
+          {
+            "name": "David Kim"
+          }
+        ],
+        "total_participants": 3,
+        "participation_balance": "balanced"
+      },
+      "summary_generated_at": "2025-01-09T09:30:00Z"
+    }
+  },
+  "tasks": {
+    "meeting_001": [
+      {
+        "id": "task_001",
+        "meeting_id": "meeting_001",
+        "title": "Design and implement OAuth 2.0 authentication flow",
+        "description": "Set up complete OAuth 2.0 flow with Google and GitHub providers for user authentication, including security reviews and testing",
+        "assignee": "Mike Chen",
+        "assignee_id": "participant_3",
+        "due_date": "2025-01-15",
+        "priority": "high",
+        "status": "pending",
+        "category": "action_item",
+        "created_at": "2025-01-08T11:30:00Z",
+        "estimated_hours": 32,
+        "dependencies": ["API design approval", "Security review"],
+        "tags": ["authentication", "oauth", "security"]
+      },
+      {
+        "id": "task_002",
+        "meeting_id": "meeting_001",
+        "title": "Review and approve authentication flow designs",
+        "description": "Review the proposed user authentication flow, UI mockups, and security implementation approach",
+        "assignee": "Sarah Johnson",
+        "assignee_id": "participant_2",
+        "due_date": "2025-01-12",
+        "priority": "medium",
+        "status": "pending",
+        "category": "follow_up",
+        "created_at": "2025-01-08T11:30:00Z",
+        "estimated_hours": 8,
+        "dependencies": ["Initial design completion"],
+        "tags": ["design", "review", "authentication"]
+      },
+      {
+        "id": "task_003",
+        "meeting_id": "meeting_001",
+        "title": "Set up OAuth provider configurations",
+        "description": "Configure OAuth applications with Google and GitHub, obtain API keys and set up development/production environments",
+        "assignee": "John Smith",
+        "assignee_id": "participant_1",
+        "due_date": "2025-01-13",
+        "priority": "medium",
+        "status": "pending",
+        "category": "action_item",
+        "created_at": "2025-01-08T11:30:00Z",
+        "estimated_hours": 4,
+        "dependencies": ["Provider account setup"],
+        "tags": ["configuration", "oauth", "setup"]
+      }
+    ],
+    "meeting_002": [
+      {
+        "id": "task_004",
+        "meeting_id": "meeting_002",
+        "title": "Complete validation middleware implementation",
+        "description": "Finish implementing input validation middleware for user profile endpoints",
+        "assignee": "Emma Watson",
+        "assignee_id": "participant_5",
+        "due_date": "2025-01-09",
+        "priority": "high",
+        "status": "in_progress",
+        "category": "development",
+        "created_at": "2025-01-09T09:30:00Z",
+        "estimated_hours": 6,
+        "dependencies": [],
+        "tags": ["backend", "validation", "middleware"]
+      },
+      {
+        "id": "task_005",
+        "meeting_id": "meeting_002",
+        "title": "Finish database migration scripts",
+        "description": "Complete the database migration scripts for schema updates",
+        "assignee": "David Kim",
+        "assignee_id": "participant_6",
+        "due_date": "2025-01-09",
+        "priority": "high",
+        "status": "in_progress",
+        "category": "development",
+        "created_at": "2025-01-09T09:30:00Z",
+        "estimated_hours": 8,
+        "dependencies": [],
+        "tags": ["database", "migration", "schema"]
+      }
+    ]
+  }
+}
