@@ -1,9 +1,11 @@
 # 🔄 Service Separation Tasks: AI Processing & Integration Services
 
 ## Overview
-This document outlines the comprehensive tasks required to separate the current monolithic architecture into two standalone containerized services:
+This document outlines the comprehensive tasks required to separate the current monolithic architecture into two standalone containerized services within a **3-day sprint timeline**:
 - **AI Processing Service**: Handles transcription, speaker identification, summarization, and task extraction
 - **Integration Service**: Manages external integrations with Notion, Slack, ClickUp, and database operations
+
+> **⚡ ACCELERATED TIMELINE**: This implementation targets completion in 3 days, focusing on core functionality and basic containerization. Advanced features like comprehensive testing and monitoring will be implemented as Phase 2.
 
 ## 📊 Current State Analysis
 
@@ -364,20 +366,23 @@ CLICKUP_API_TOKEN=pk_...
 
 ## 📋 Implementation Checklist
 
-### Week 1: Core Infrastructure
+### Day 1: Core Infrastructure & Service Foundation
 - [ ] ✅ Task 1.1-1.5: Integration Service Foundation
 - [ ] ✅ Task 2.1-2.2: AI Processing Cleanup & Client
 - [ ] ✅ Task 4.1-4.2: Basic Docker Setup
+- [ ] ✅ Task 3.1-3.2: Shared Components (Models & Constants)
 
-### Week 2: Service Communication
+### Day 2: Service Communication & Docker Integration
 - [ ] ✅ Task 2.3-2.4: Update Processing Flow
-- [ ] ✅ Task 3.1-3.3: Shared Components
+- [ ] ✅ Task 3.3: Shared Error Handling
+- [ ] ✅ Task 4.3-4.4: Complete Docker Setup
 - [ ] ✅ Task 5.1-5.4: Communication & Error Handling
 
-### Week 3: Testing & Production Readiness
-- [ ] ✅ Task 4.3-4.4: Complete Docker Setup
-- [ ] ✅ Task 6.1-6.4: Testing Infrastructure
-- [ ] ✅ Task 7.1-7.3: Documentation & Deployment
+### Day 3: Testing & Production Readiness
+- [ ] ✅ Task 6.1-6.2: Service Tests (Critical paths only)
+- [ ] ✅ Task 6.3: End-to-End Tests (Basic workflow)
+- [ ] ✅ Task 7.1: API Documentation
+- [ ] ✅ Task 7.2-7.3: Basic Deployment Scripts
 
 ## 🔍 Validation Criteria
 
@@ -405,48 +410,72 @@ CLICKUP_API_TOKEN=pk_...
 - [ ] End-to-end workflow tests
 - [ ] Mock services for development
 
-## 📊 Risk Assessment
+## 📊 Risk Assessment (3-Day Sprint)
 
-### High Risk
-- **Database connection management**: Ensure both services can connect to TiDB
-- **Service communication**: HTTP client reliability and error handling
-- **Shared state**: Avoid service dependencies beyond API calls
+### High Risk ⚠️
+- **Time pressure**: 3-day timeline requires focused execution
+- **Service communication**: HTTP client must work reliably from Day 1
+- **Docker integration**: Services must start correctly together
+- **Database connection management**: Both services need TiDB access immediately
 
-### Medium Risk
-- **Configuration management**: Environment variables and secrets
-- **Testing complexity**: Mocking service interactions
-- **Deployment coordination**: Starting services in correct order
+### Medium Risk ⚡
+- **Integration testing**: Limited time for comprehensive testing
+- **Error handling**: Basic implementation, refinement in Phase 2
+- **Configuration management**: Must work but may lack advanced features
 
-### Low Risk
-- **Code organization**: Moving files between services
-- **Docker setup**: Standard containerization practices
-- **Documentation**: Updating existing docs
+### Low Risk ✅
+- **Code organization**: Straightforward file movement
+- **Mock removal**: Clear deletion of unused code
+- **Basic API setup**: Standard FastAPI implementation
 
-## 🚀 Getting Started
+## 🚀 Getting Started (3-Day Sprint)
 
+### Day 1 Morning (Hours 1-4)
 1. **Create Feature Branch**:
    ```bash
-   git checkout -b feature/service-separation
+   git checkout -b feature/service-separation-sprint
    ```
 
-2. **Start with Integration Service**:
+2. **Integration Service Foundation**:
    ```bash
-   # Focus on Task 1.1-1.5 first
    touch integration/app/main.py
+   # Implement Tasks 1.1-1.3 (FastAPI + endpoints)
    ```
 
-3. **Test Incrementally**:
+### Day 1 Afternoon (Hours 5-8)
+3. **AI Processing Cleanup**:
    ```bash
-   # Test each service independently
+   # Remove integration_adapter.py
+   # Implement integration_client.py
+   ```
+
+### Daily Validation Checkpoints
+4. **End of Day Testing**:
+   ```bash
    docker-compose up integration-service
    docker-compose up ai-processing
-   ```
-
-4. **Validate Communication**:
-   ```bash
-   # Test service-to-service calls
    curl http://localhost:5167/health
    curl http://localhost:3003/health
    ```
 
-This task breakdown provides a comprehensive roadmap for separating the services while maintaining functionality and adding proper containerization support.
+### Success Metrics Per Day
+- **Day 1**: Both services start independently
+- **Day 2**: Services communicate via HTTP
+- **Day 3**: Complete workflow working in containers
+
+## ⚡ 3-Day Sprint Notes
+
+### Focus Areas
+- **Minimum Viable Separation**: Core functionality over perfection
+- **Docker First**: Containerization is primary goal
+- **Basic Testing**: Essential tests only, expand in Phase 2
+- **Working Software**: Functional over comprehensive
+
+### Phase 2 Candidates (Post-Sprint)
+- Advanced retry mechanisms
+- Comprehensive test suites
+- Performance monitoring  
+- Advanced error handling
+- Production deployment scripts
+
+This task breakdown provides a focused 3-day sprint roadmap for rapidly separating the services while maintaining functionality and achieving proper containerization support.
