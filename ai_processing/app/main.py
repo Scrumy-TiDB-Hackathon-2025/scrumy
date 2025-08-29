@@ -295,7 +295,7 @@ def create_database():
 
 # Global database manager instance for meeting management endpoints
 # db = DatabaseManager()
-db = DatabaseFactory.create_database()
+db = DatabaseFactory.create_database(db_type='sqlite')
 
 # New Pydantic models for meeting management with participant support
 class Participant(BaseModel):
@@ -354,8 +354,8 @@ class SummaryProcessor:
     """Handles the processing of summaries in a thread-safe way"""
     def __init__(self):
         try:
-            # self.db = DatabaseManager()
-            self.db = DatabaseFactory.create_database()
+            # Change this line to include db_type
+            self.db = DatabaseFactory.create_database(db_type='sqlite')
             logger.info("Initializing SummaryProcessor components")
             self.transcript_processor = TranscriptProcessor()
             logger.info("SummaryProcessor initialized successfully (core components)")
