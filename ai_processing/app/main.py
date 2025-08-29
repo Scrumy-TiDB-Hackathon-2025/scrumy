@@ -1,19 +1,26 @@
 import subprocess
-from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Form
+from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Form, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import uvicorn
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 import logging
 from dotenv import load_dotenv
 from app.db import DatabaseManager
+from app.database_interface import DatabaseFactory, validate_database_config
 import json
 from threading import Lock
 from app.transcript_processor import TranscriptProcessor
 import time
 import os
 from app.integrated_processor import IntegratedAIProcessor
+import uuid
+import pytest
+import asyncio
+import datetime
+import base64
+
 
 # Import AIProcessor from its own module
 from app.ai_processor import AIProcessor
@@ -23,6 +30,12 @@ try:
     from app.tools_endpoints import router as tools_router
 except ImportError:
     from app.tools_endpoints import router as tools_router
+
+# Import WebSocket functionality
+from app.websocket_server import websocket_endpoint, websocket_manager
+
+# Import integration adapter
+from app.integration_adapter import get_integration_adapter, notify_meeting_processed
 
 # Load environment variables
 load_dotenv()
@@ -70,47 +83,229 @@ app.include_router(tools_router, prefix="/api/v1", tags=["tools"])
 async def health_check():
     return {"status": "healthy"}
 
+def preprocess_audio_for_whisper(input_path: str, output_path: str) -> bool:
+    """
+    Convert audio to the format expected by whisper.cpp:
+    - Mono channel
+    - 16kHz sample rate 
+    - 16-bit PCM WAV format
+    """
+    try:
+        # Use ffmpeg to convert to whisper.cpp requirements
+        cmd = [
+            "ffmpeg",
+            "-i", input_path,
+            "-ar", "16000",      # Sample rate: 16kHz
+            "-ac", "1",          # Audio channels: mono
+            "-c:a", "pcm_s16le", # Codec: 16-bit PCM little-endian
+            "-y",                # Overwrite output file
+            output_path
+        ]
+        
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        if result.returncode != 0:
+            logger.error(f"FFmpeg conversion failed: {result.stderr}")
+            return False
+            
+        return True
+        
+    except Exception as e:
+        logger.error(f"Audio preprocessing failed: {str(e)}")
+        return False
+
 @app.post("/transcribe")
 async def transcribe(file: UploadFile = File(...)):
     try:
-        whisper_executable = "./whisper-server-package/main"
-        model_path = './whisper-server-package/models/for-tests-ggml-tiny.en.bin'
+        # Use the same paths as your working test
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        whisper_executable = os.path.join(base_dir, "../whisper.cpp/build/bin/whisper-cli")
+        model_path = os.path.join(base_dir, "../whisper.cpp/models/ggml-base.en.bin")
 
-
-        # Check whisper executable + model exist
         if not os.path.isfile(whisper_executable):
             raise HTTPException(status_code=500, detail="Whisper executable not found")
         if not os.path.isfile(model_path):
             raise HTTPException(status_code=500, detail="Whisper model not found")
 
-        # Save uploaded file temporarily
+        # Create temporary files for the UPLOADED audio file
         temp_audio_path = f"temp_{file.filename}"
-        with open(temp_audio_path, "wb") as f:
-            f.write(await file.read())
+        processed_audio_path = f"processed_{file.filename}.wav"
+        
+        try:
+            # Save the uploaded file to disk
+            with open(temp_audio_path, "wb") as f:
+                f.write(await file.read())
 
-        # Run whisper
-        result = subprocess.run(
-            [whisper_executable, "-m", model_path, temp_audio_path, "-f", "json"],
-            capture_output=True,
-            text=True
-        )
+            # Check if ffmpeg is available
+            try:
+                subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
+                ffmpeg_available = True
+            except:
+                ffmpeg_available = False
+                logger.warning("FFmpeg not available, using original audio file")
 
-        # Clean up
-        os.remove(temp_audio_path)
+            # Preprocess audio if ffmpeg is available
+            audio_file_to_use = temp_audio_path
+            if ffmpeg_available:
+                if preprocess_audio_for_whisper(temp_audio_path, processed_audio_path):
+                    audio_file_to_use = processed_audio_path
+                    logger.info("Audio preprocessed successfully")
+                else:
+                    logger.warning("Audio preprocessing failed, using original file")
 
-        if result.returncode != 0:
-            raise HTTPException(status_code=500, detail=result.stderr)
+            # Run whisper command
+            whisper_cmd = [
+                whisper_executable,
+                "-m", model_path,
+                "--output-json",
+                "--output-file", "-",
+                "--no-gpu",
+                "--language", "en",
+                "--threads", "4",
+                "--best-of", "5",
+                "--beam-size", "5",
+                "--word-thold", "0.01",
+                "--entropy-thold", "2.4",
+                "--logprob-thold", "-1.0",
+                audio_file_to_use,  # Use the uploaded file, not a hardcoded path
+            ]
 
-        return {"transcript": result.stdout}
+            logger.info(f"Running whisper command: {' '.join(whisper_cmd)}")
+            
+            result = subprocess.run(
+                whisper_cmd,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+
+            logger.info(f"Whisper return code: {result.returncode}")
+            logger.info(f"Whisper stderr: {result.stderr}")
+            logger.info(f"Whisper stdout length: {len(result.stdout)}")
+
+            if result.returncode != 0:
+                raise HTTPException(status_code=500, detail=f"Whisper failed: {result.stderr}")
+
+            # Parse JSON output from whisper
+            transcript_text = ""
+            if result.stdout.strip():
+                try:
+                    parsed = json.loads(result.stdout)
+                    
+                    # Debug: Log the JSON structure
+                    logger.info(f"Whisper JSON keys: {list(parsed.keys())}")
+                    
+                    # Try different ways to extract transcript text
+                    if "text" in parsed:
+                        transcript_text = parsed["text"].strip()
+                    elif "transcription" in parsed:
+                        segments = parsed["transcription"]
+                        logger.info(f"Whisper found {len(segments)} segments")
+                        # Combine all segment texts
+                        transcript_text = " ".join([seg.get("text", "") for seg in segments if seg.get("text")]).strip()
+                    
+                    # If still empty, try to extract from any text fields in segments
+                    if not transcript_text and "transcription" in parsed:
+                        all_texts = []
+                        for seg in parsed["transcription"]:
+                            if isinstance(seg, dict):
+                                for key in ["text", "content", "transcript"]:
+                                    if key in seg and seg[key]:
+                                        all_texts.append(str(seg[key]))
+                        transcript_text = " ".join(all_texts).strip()
+                        
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Failed to parse JSON, using raw output: {e}")
+                    transcript_text = result.stdout.strip()
+                except Exception as e:
+                    logger.error(f"Error parsing Whisper output: {e}")
+                    # Log first 500 chars of output for debugging
+                    logger.info(f"Raw Whisper output sample: {result.stdout[:500]}...")
+            
+            # Save the raw Whisper output to file for debugging
+            try:
+                debug_file = f"whisper_output_{file.filename}_{int(time.time())}.json"
+                with open(debug_file, "w") as f:
+                    f.write(result.stdout)
+                logger.info(f"Whisper output saved to: {debug_file}")
+            except Exception as e:
+                logger.warning(f"Failed to save debug output: {e}")
+            
+            if not transcript_text:
+                logger.warning("Empty transcript received. Possible causes:")
+                logger.warning("1. Audio contains no speech")
+                logger.warning("2. Audio quality is too poor") 
+                logger.warning("3. Audio format is not compatible")
+                logger.warning("4. Whisper model sensitivity settings")
+
+            return {"transcript": transcript_text}
+
+        finally:
+            # Cleanup temporary files
+            for temp_file in [temp_audio_path, processed_audio_path]:
+                if os.path.exists(temp_file):
+                    try:
+                        os.remove(temp_file)
+                    except:
+                        pass
 
     except Exception as e:
+        logger.error(f"Transcription error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+# Initialize database based on environment configuration
+def create_database():
+    """Create database instance based on environment configuration"""
+    db_type = os.getenv('DATABASE_TYPE', 'sqlite').lower()
+
+    if db_type == 'tidb':
+        # TiDB configuration from environment
+        config = {
+            "type": "tidb",
+            "connection": {
+                "host": os.getenv('TIDB_HOST', 'localhost'),
+                "port": int(os.getenv('TIDB_PORT', 4000)),
+                "user": os.getenv('TIDB_USER'),
+                "password": os.getenv('TIDB_PASSWORD'),
+                "database": os.getenv('TIDB_DATABASE', 'scrumy_ai'),
+                "ssl_mode": os.getenv('TIDB_SSL_MODE', 'REQUIRED')
+            }
+        }
+    else:
+        # SQLite configuration (default for development)
+        config = {
+            "type": "sqlite",
+            "connection": {
+                "db_path": os.getenv('SQLITE_DB_PATH', 'meeting_minutes.db')
+            }
+        }
+
+    if validate_database_config(config):
+        logger.info(f"Initializing {db_type.upper()} database")
+        return DatabaseFactory.create_from_config(config)
+    else:
+        logger.error("Invalid database configuration, falling back to SQLite")
+        fallback_config = {"type": "sqlite", "connection": {"db_path": "meeting_minutes.db"}}
+        return DatabaseFactory.create_from_config(fallback_config)
 
 # Global database manager instance for meeting management endpoints
-db = DatabaseManager()
+# db = DatabaseManager()
+db = DatabaseFactory.create_database(db_type='sqlite')
 
-# New Pydantic models for meeting management
+# New Pydantic models for meeting management with participant support
+class Participant(BaseModel):
+    """Participant data from chrome extension"""
+    id: str
+    name: str
+    platform_id: Optional[str] = None
+    status: str = "active"
+    join_time: str
+    is_host: bool = False
 class Transcript(BaseModel):
     id: str
     text: str
@@ -159,8 +354,8 @@ class SummaryProcessor:
     """Handles the processing of summaries in a thread-safe way"""
     def __init__(self):
         try:
-            self.db = DatabaseManager()
-
+            # Change this line to include db_type
+            self.db = DatabaseFactory.create_database(db_type='sqlite')
             logger.info("Initializing SummaryProcessor components")
             self.transcript_processor = TranscriptProcessor()
             logger.info("SummaryProcessor initialized successfully (core components)")
@@ -460,8 +655,8 @@ async def save_transcript(request: SaveTranscriptRequest):
         logger.info(f"Received save-transcript request for meeting: {request.meeting_title}")
         logger.info(f"Number of transcripts to save: {len(request.transcripts)}")
 
-        # Generate a unique meeting ID
-        meeting_id = f"meeting-{int(time.time() * 1000)}"
+        # Generate a unique meeting ID using UUID
+        meeting_id = f"meeting-{uuid.uuid4()}"
 
         # Save the meeting
         await db.save_meeting(meeting_id, request.meeting_title)
@@ -529,7 +724,264 @@ async def get_api_key(request: GetApiKeyRequest):
     """Get the API key for a given provider"""
     return await db.get_api_key(request.provider)
 
+# Chrome Extension Compatible Endpoints
 
+class IdentifySpeakersRequest(BaseModel):
+    text: str
+    context: Optional[str] = ""
+
+class GenerateSummaryRequest(BaseModel):
+    transcript: str
+    meeting_id: Optional[str] = None
+    meeting_title: Optional[str] = None
+
+class ExtractTasksRequest(BaseModel):
+    transcript: str
+    meeting_context: Optional[Dict] = None
+
+class ProcessTranscriptWithToolsRequest(BaseModel):
+    text: str
+    meeting_id: str
+    timestamp: Optional[str] = None
+    platform: Optional[str] = "unknown"
+
+@app.post("/identify-speakers")
+async def identify_speakers(request: IdentifySpeakersRequest):
+    """Identify speakers in meeting transcript - Chrome extension compatible"""
+    try:
+        from app.speaker_identifier import SpeakerIdentifier
+
+        ai_processor = AIProcessor()
+        speaker_identifier = SpeakerIdentifier(ai_processor)
+
+        result = await speaker_identifier.identify_speakers_advanced(
+            request.text,
+            request.context
+        )
+
+        # Format response to match Chrome extension expectations
+        speakers_data = []
+        if 'speakers' in result:
+            for i, speaker in enumerate(result['speakers']):
+                if isinstance(speaker, dict):
+                    speakers_data.append({
+                        'id': f"speaker_{i + 1}",
+                        'name': speaker.get('name', f'Speaker {i + 1}'),
+                        'segments': speaker.get('segments', []),
+                        'total_words': speaker.get('word_count', 0),
+                        'characteristics': speaker.get('characteristics', '')
+                    })
+                elif isinstance(speaker, str):
+                    speakers_data.append({
+                        'id': f"speaker_{i + 1}",
+                        'name': speaker,
+                        'segments': [f"{speaker} contributed to the discussion"],
+                        'total_words': 50,
+                        'characteristics': f"{speaker} - active participant"
+                    })
+
+        return {
+            'status': 'success',
+            'data': {
+                'speakers': speakers_data,
+                'confidence': result.get('confidence', 0.85),
+                'total_speakers': len(speakers_data),
+                'identification_method': 'ai_inference',
+                'processing_time': result.get('processing_time', 1.5)
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Speaker identification error: {e}")
+        raise HTTPException(status_code=500, detail=f"Speaker identification failed: {str(e)}")
+
+@app.post("/generate-summary")
+async def generate_summary(request: GenerateSummaryRequest):
+    """Generate comprehensive meeting summary - Chrome extension compatible"""
+    try:
+        from app.meeting_summarizer import MeetingSummarizer
+
+        ai_processor = AIProcessor()
+        summarizer = MeetingSummarizer(ai_processor)
+
+        meeting_context = {
+            'meeting_id': request.meeting_id,
+            'meeting_title': request.meeting_title or "Team Meeting"
+        }
+
+        summary = await summarizer.generate_comprehensive_summary(
+            request.transcript,
+            meeting_context
+        )
+
+        # Format response to match Chrome extension expectations
+        return {
+            'status': 'success',
+            'data': {
+                'meeting_title': request.meeting_title or "Team Meeting",
+                'executive_summary': {
+                    'overview': summary.get('overview', 'Meeting summary generated'),
+                    'key_outcomes': summary.get('key_points', ['Meeting completed successfully']),
+                    'business_impact': summary.get('business_impact', 'Positive impact on team collaboration'),
+                    'urgency_level': summary.get('urgency_level', 'medium'),
+                    'follow_up_required': summary.get('follow_up_required', True)
+                },
+                'key_decisions': {
+                    'decisions': summary.get('decisions', []),
+                    'total_decisions': len(summary.get('decisions', [])),
+                    'consensus_level': summary.get('consensus_level', 'good')
+                },
+                'participants': {
+                    'participants': summary.get('participants', []),
+                    'meeting_leader': summary.get('meeting_leader', 'Unknown'),
+                    'total_participants': len(summary.get('participants', [])),
+                    'participation_balance': summary.get('participation_balance', 'balanced')
+                },
+                'summary_generated_at': datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Summary generation error: {e}")
+        raise HTTPException(status_code=500, detail=f"Summary generation failed: {str(e)}")
+
+@app.post("/extract-tasks")
+async def extract_tasks(request: ExtractTasksRequest):
+    """Extract action items and tasks - Chrome extension compatible"""
+    try:
+        from app.task_extractor import TaskExtractor
+
+        ai_processor = AIProcessor()
+        task_extractor = TaskExtractor(ai_processor)
+
+        tasks_result = await task_extractor.extract_comprehensive_tasks(
+            request.transcript,
+            request.meeting_context or {}
+        )
+
+        # Format tasks to match Chrome extension expectations
+        formatted_tasks = []
+        if 'tasks' in tasks_result:
+            for i, task in enumerate(tasks_result['tasks']):
+                if isinstance(task, dict):
+                    formatted_tasks.append({
+                        'id': f"task_{i + 1}",
+                        'title': task.get('title', f'Task {i + 1}'),
+                        'description': task.get('description', ''),
+                        'assignee': task.get('assignee', 'Unassigned'),
+                        'due_date': task.get('due_date'),
+                        'priority': task.get('priority', 'medium'),
+                        'status': 'pending',
+                        'category': task.get('category', 'action_item'),
+                        'dependencies': task.get('dependencies', []),
+                        'business_impact': task.get('priority', 'medium'),
+                        'created_at': datetime.now().isoformat()
+                    })
+
+        return {
+            'status': 'success',
+            'data': {
+                'tasks': formatted_tasks,
+                'task_summary': {
+                    'total_tasks': len(formatted_tasks),
+                    'high_priority': len([t for t in formatted_tasks if t['priority'] == 'high']),
+                    'with_deadlines': len([t for t in formatted_tasks if t['due_date']]),
+                    'assigned': len([t for t in formatted_tasks if t['assignee'] != 'Unassigned'])
+                },
+                'extraction_metadata': {
+                    'explicit_tasks_found': len(formatted_tasks),
+                    'implicit_tasks_found': 0,
+                    'extracted_at': datetime.now().isoformat()
+                }
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Task extraction error: {e}")
+        raise HTTPException(status_code=500, detail=f"Task extraction failed: {str(e)}")
+
+@app.post("/process-transcript-with-tools")
+async def process_transcript_with_tools(request: ProcessTranscriptWithToolsRequest):
+    """Process transcript with all AI tools - Chrome extension compatible"""
+    try:
+        # Use integrated processor for comprehensive analysis
+        integrated_processor = IntegratedAIProcessor()
+
+        meeting_context = {
+            'meeting_id': request.meeting_id,
+            'platform': request.platform,
+            'timestamp': request.timestamp
+        }
+
+        result = await integrated_processor.process_complete_meeting(
+            request.text,
+            meeting_context
+        )
+
+        # Extract participants for integration
+        participants = []
+        if 'speakers' in result:
+            participants = [
+                speaker.get('name', 'Unknown')
+                for speaker in result['speakers']
+                if isinstance(speaker, dict)
+            ]
+
+        # Notify integration systems (async, non-blocking)
+        try:
+            asyncio.create_task(notify_meeting_processed(
+                meeting_id=request.meeting_id,
+                meeting_title=f"Meeting {request.meeting_id}",
+                platform=request.platform,
+                participants=participants,
+                transcript=request.text,
+                summary_data=result.get('summary', {}),
+                tasks_data=result.get('tasks', []),
+                speakers_data=result.get('speakers', [])
+            ))
+            logger.info(f"Triggered integration processing for meeting {request.meeting_id}")
+        except Exception as integration_error:
+            logger.warning(f"Integration notification failed: {integration_error}")
+
+        # Format response to match Chrome extension expectations
+        return {
+            'status': 'success',
+            'meeting_id': request.meeting_id,
+            'analysis': result.get('summary', {}),
+            'actions_taken': result.get('tasks', []),
+            'speakers': result.get('speakers', []),
+            'tools_used': 3,  # Speaker ID, Summary, Tasks
+            'processed_at': datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Comprehensive processing error: {e}")
+        raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
+
+@app.get("/available-tools")
+async def get_available_tools():
+    """Get list of available AI tools - Chrome extension compatible"""
+    return {
+        'tools': [
+            {
+                'name': 'identify_speakers',
+                'description': 'Identify speakers in meeting transcript',
+                'parameters': ['text', 'context']
+            },
+            {
+                'name': 'extract_tasks',
+                'description': 'Extract action items and tasks',
+                'parameters': ['transcript', 'meeting_context']
+            },
+            {
+                'name': 'generate_summary',
+                'description': 'Generate comprehensive meeting summary',
+                'parameters': ['transcript', 'meeting_title']
+            }
+        ],
+        'tool_names': ['identify_speakers', 'extract_tasks', 'generate_summary'],
+        'count': 3
+    }
 
 
 @app.on_event("shutdown")

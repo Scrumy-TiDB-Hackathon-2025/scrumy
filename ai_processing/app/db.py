@@ -88,6 +88,23 @@ class DatabaseManager:
                 )
             """)
 
+            # Create participants table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS participants (
+                    id TEXT PRIMARY KEY,
+                    meeting_id TEXT NOT NULL,
+                    participant_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    platform_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    join_time TEXT NOT NULL,
+                    is_host BOOLEAN NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (meeting_id) REFERENCES meetings(id),
+                    UNIQUE(meeting_id, participant_id)
+                )
+            """)
+
             conn.commit()
 
     @asynccontextmanager
@@ -220,8 +237,8 @@ class DatabaseManager:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 
-                # Check if meeting exists
-                cursor.execute("SELECT id FROM meetings WHERE id = ? OR title = ?", (meeting_id, title))
+                # Only check if meeting ID exists (not title, as titles can be duplicated)
+                cursor.execute("SELECT id FROM meetings WHERE id = ?", (meeting_id,))
                 existing_meeting = cursor.fetchone()
                 
                 if not existing_meeting:
@@ -431,5 +448,15 @@ class DatabaseManager:
             await conn.execute(f"UPDATE settings SET {api_key_name} = NULL WHERE id = '1'")
             await conn.commit()
 
-
+    def clear_all(self):
+        """Delete all rows from all tables (for tests)"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM transcript_chunks")
+            cursor.execute("DELETE FROM summary_processes")
+            cursor.execute("DELETE FROM transcripts")
+            cursor.execute("DELETE FROM meetings")
+            cursor.execute("DELETE FROM settings")
+            cursor.execute("DELETE FROM participants")
+            conn.commit()
 
