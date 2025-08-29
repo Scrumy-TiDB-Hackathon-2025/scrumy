@@ -79,5 +79,10 @@ def pytest_sessionfinish(session, exitstatus):
 # Your DB will be wiped before each test.
 # If you want even more detailed output during the run, you can also use:
 # pytest -v -s
-
+# Run tests with:
+# pytest tests/test_endpoints.py   
+# To be more specific:
+# pytest -v tests/test_endpoints.py
+# Or for verbose output:    
+# pytest -v -s tests/test_endpoints.py
 # Results will be saved into tests/test_results.json
