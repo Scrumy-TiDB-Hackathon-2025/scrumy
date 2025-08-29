@@ -20,11 +20,13 @@ from typing import Dict, List, Optional
 import logging
 
 # Add integration directory to path to import integration modules
-integration_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'integration')
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(current_dir))
+integration_path = os.path.join(project_root, 'integration')
 sys.path.insert(0, integration_path)
 
 try:
-    from app.tools import ToolsRegistry
+    from app.tools import ToolRegistry
     from app.integrations import IntegrationManager
     INTEGRATION_AVAILABLE = True
 except ImportError as e:
@@ -61,7 +63,7 @@ class AIProcessingIntegrationBridge:
         
         if self.enabled:
             try:
-                self.tools_registry = ToolsRegistry()
+                self.tools_registry = ToolRegistry()
                 self.integration_manager = IntegrationManager()
                 logger.info("Integration bridge initialized successfully")
             except Exception as e:
