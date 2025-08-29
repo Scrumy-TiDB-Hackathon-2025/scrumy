@@ -1,0 +1,95 @@
+{
+  "tests_run": 4,
+  "tests_passed": 1,
+  "tests_failed": 3,
+  "results": [
+    {
+      "test": "websocket_participant_metadata",
+      "success": true,
+      "message": "Test skipped - WebSocket implementation not confirmed in backend",
+      "details": {
+        "note": "This test requires a WebSocket server implementation that may not be present"
+      },
+      "timestamp": "2025-08-20T18:53:58.070606"
+    },
+    {
+      "test": "rest_api_participant_context",
+      "success": false,
+      "message": "REST API test failed with exception: Cannot connect to host localhost:5167 ssl:default [Multiple exceptions: [Errno 61] Connect call failed ('::1', 5167, 0, 0), [Errno 61] Connect call failed ('127.0.0.1', 5167)]",
+      "details": {
+        "error": "Cannot connect to host localhost:5167 ssl:default [Multiple exceptions: [Errno 61] Connect call failed ('::1', 5167, 0, 0), [Errno 61] Connect call failed ('127.0.0.1', 5167)]"
+      },
+      "timestamp": "2025-08-20T18:53:58.190696"
+    },
+    {
+      "test": "speaker_identification_with_context",
+      "success": false,
+      "message": "Speaker identification failed on all endpoints",
+      "details": {
+        "request": {
+          "text": "\nTest Participant 1: I think we should prioritize the database migration first.\nTest Participant 2: I agree, but we need to finish the API redesign before that.\nTest Participant 3: Let's create a task for both and prioritize next week.\n            ",
+          "context": "Known participants: Test Participant 1 (host, joined 2025-08-20T18:53:58.190749), Test Participant 2 (guest, joined 2025-08-20T18:53:58.190755), Test Participant 3 (guest, joined 2025-08-20T18:53:58.190759)"
+        },
+        "tried_endpoints": [
+          "/identify-speakers",
+          "/api/v1/identify-speakers",
+          "/speaker-identification",
+          "/process-transcript"
+        ]
+      },
+      "timestamp": "2025-08-20T18:53:58.199243"
+    },
+    {
+      "test": "create_meeting_with_participants",
+      "success": false,
+      "message": "Failed to create meeting with participants via any endpoint",
+      "details": {
+        "request": {
+          "meeting_id": "test-meeting-af329cc2-5015-47d2-a833-626281a2a52f",
+          "meeting_title": "Test Meeting with Participants - 2025-08-20T18:53:58.199279",
+          "platform": "google-meet",
+          "participants": [
+            {
+              "id": "participant_5156ff3b-7286-46f7-85ad-b22e09fbe96e",
+              "name": "Test Participant 1",
+              "platform_id": "spaces/test/devices/100",
+              "status": "active",
+              "join_time": "2025-08-20T18:53:58.199264",
+              "is_host": true
+            },
+            {
+              "id": "participant_9d78e734-05f4-4180-93c6-4a8c6908edf2",
+              "name": "Test Participant 2",
+              "platform_id": "spaces/test/devices/101",
+              "status": "active",
+              "join_time": "2025-08-20T18:53:58.199270",
+              "is_host": false
+            },
+            {
+              "id": "participant_ae01ae29-8b0e-48f8-86c6-971dfbb64a28",
+              "name": "Test Participant 3",
+              "platform_id": "spaces/test/devices/102",
+              "status": "active",
+              "join_time": "2025-08-20T18:53:58.199274",
+              "is_host": false
+            }
+          ],
+          "transcripts": [
+            {
+              "id": "793527ce-cfee-4728-8156-a3cf90ec3a74",
+              "text": "Meeting started with 3 participants",
+              "timestamp": "2025-08-20T18:53:58.199283"
+            }
+          ]
+        }
+      },
+      "timestamp": "2025-08-20T18:53:58.200879"
+    }
+  ],
+  "test_timestamp": "2025-08-20T18:53:58.070552",
+  "backend_url": "http://localhost:5167",
+  "environment": {
+    "platform": "darwin",
+    "python_version": "3.13.5 (main, Jun 11 2025, 15:36:57) [Clang 17.0.0 (clang-1700.0.13.3)]"
+  }
+}
