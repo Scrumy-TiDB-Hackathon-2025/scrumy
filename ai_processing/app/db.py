@@ -88,6 +88,23 @@ class DatabaseManager:
                 )
             """)
 
+            # Create participants table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS participants (
+                    id TEXT PRIMARY KEY,
+                    meeting_id TEXT NOT NULL,
+                    participant_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    platform_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    join_time TEXT NOT NULL,
+                    is_host BOOLEAN NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (meeting_id) REFERENCES meetings(id),
+                    UNIQUE(meeting_id, participant_id)
+                )
+            """)
+
             conn.commit()
 
     @asynccontextmanager
@@ -440,5 +457,6 @@ class DatabaseManager:
             cursor.execute("DELETE FROM transcripts")
             cursor.execute("DELETE FROM meetings")
             cursor.execute("DELETE FROM settings")
+            cursor.execute("DELETE FROM participants")
             conn.commit()
 

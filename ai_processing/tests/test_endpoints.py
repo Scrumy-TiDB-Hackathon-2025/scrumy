@@ -198,9 +198,10 @@ def test_transcribe_with_audio_robust():
         pytest.skip(f"Test audio file not found: {audio_path}")
     
     # Check Whisper components
-    whisper_executable = "./whisper-server-package/main"
-    model_path = './whisper-server-package/models/for-tests-ggml-base.en.bin'
-    
+    base_dir = os.path.dirname(os.path.abspath(__file__))  # directory of this test file
+    whisper_executable = os.path.join(base_dir, "../whisper.cpp/build/bin/whisper-cli")
+    model_path = os.path.join(base_dir, "../whisper.cpp/models/ggml-base.en.bin")
+
     if not os.path.isfile(whisper_executable) or not os.path.isfile(model_path):
         pytest.skip("Whisper components not available")
 
@@ -257,8 +258,11 @@ def test_transcribe_with_real_audio_diagnostic():
         pytest.fail(f"Invalid audio file: {e}")
 
     # Check Whisper components
-    whisper_executable = "./whisper-server-package/main"
-    model_path = './whisper-server-package/models/for-tests-ggml-base.en.bin'
+    # whisper_executable = "./whisper-server-package/main"
+    # model_path = './whisper-server-package/models/for-tests-ggml-base.en.bin'
+    base_dir = os.path.dirname(os.path.abspath(__file__))  # directory of this test file
+    whisper_executable = os.path.join(base_dir, "../whisper.cpp/build/bin/whisper-cli")
+    model_path = os.path.join(base_dir, "../whisper.cpp/models/ggml-base.en.bin")
     
     print(f"🔍 Checking Whisper components:")
     print(f"   Executable: {whisper_executable} - {'✅' if os.path.isfile(whisper_executable) else '❌'}")
