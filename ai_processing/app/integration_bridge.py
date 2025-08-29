@@ -186,7 +186,7 @@ class AIProcessingIntegrationBridge:
                     # due_date=integration_task.get("due_date")
                 )
                 
-                if result.get("success"):
+                if result.get("task_created"):
                     results["tasks_created"] += 1
                     
                     # Track successful integrations
