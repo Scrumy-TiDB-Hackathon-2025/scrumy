@@ -37,13 +37,7 @@ class NotionIntegration:
         if task.get("priority") and task["priority"] not in ["low", "medium", "high", "urgent"]:
             errors.append("Priority must be one of: low, medium, high, urgent")
         
-        # Validate due date format
-        if task.get("due_date"):
-            try:
-                from datetime import datetime
-                datetime.fromisoformat(task["due_date"])
-            except ValueError:
-                errors.append("Invalid due_date format. Use YYYY-MM-DD")
+        # Due date validation removed - not available in database schema
         
         # Validate description length
         if task.get("description") and len(task["description"]) > 2000:
@@ -122,8 +116,16 @@ class NotionIntegration:
             }
         
         if task.get("priority"):
+            # Map priority values to match database options
+            priority_mapping = {
+                "low": "Low",
+                "medium": "Medium", 
+                "high": "High",
+                "urgent": "High"  # Map urgent to High since that's what's available
+            }
+            priority_value = priority_mapping.get(task["priority"].lower(), "Medium")
             properties["Priority"] = {
-                "select": {"name": task["priority"].capitalize()}
+                "select": {"name": priority_value}
             }
         
         # Always set initial status
@@ -132,20 +134,24 @@ class NotionIntegration:
         }
         
         if task.get("assignee"):
+            # Use the assignee name directly - Notion will create the option if it doesn't exist
+            # Clean up the assignee name for consistency
+            assignee_name = task["assignee"].strip()
+            
+            # Apply some basic formatting for common cases
+            if assignee_name.lower() in ["scrumbot", "scrumai", "ai"]:
+                assignee_name = "ScrumAI"
+            elif assignee_name.lower() == "test user":
+                assignee_name = "Test User"
+            else:
+                # Use the original name, properly capitalized
+                assignee_name = " ".join(word.capitalize() for word in assignee_name.split())
+            
             properties["Assignee"] = {
-                "rich_text": [{"text": {"content": task["assignee"][:100]}}]  # Reasonable limit
+                "select": {"name": assignee_name}
             }
         
-        if task.get("due_date"):
-            properties["Due Date"] = {
-                "date": {"start": task["due_date"]}
-            }
-        
-        # Add meeting context if available
-        if task.get("meeting_id"):
-            properties["Meeting"] = {
-                "rich_text": [{"text": {"content": task["meeting_id"]}}]
-            }
+        # Due Date and Meeting ID properties not available in database schema - removed
         
         payload = {
             "parent": {"database_id": self.database_id},
@@ -477,7 +483,7 @@ class ClickUpIntegration:
             "name": task["title"][:255],  # ClickUp title limit
             "description": task.get("description", "")[:8000],  # ClickUp description limit
             "priority": priority_map.get(task.get("priority", "medium"), 3),
-            "status": "Open",  # Use proper ClickUp status
+            "status": "to do",  # Use proper ClickUp status
             "tags": ["scrumbot", "ai-generated"]
         }
         
