@@ -277,3 +277,13 @@ GIT_HISTORY_CLEANUP_OPTIONS.md
 TARGETED_HISTORY_CLEANUP.md
 GIT_CLEANUP_TRACKER.md
 git_cleanup_script.sh
+
+# Virtual environments
+venv/
+.venv/
+
+# Cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd

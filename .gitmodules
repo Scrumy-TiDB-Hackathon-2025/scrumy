@@ -1,4 +1,3 @@
-[submodule "backend/whisper.cpp"]
-	path = backend/whisper.cpp
-	url = https://github.com/Zackriya-Solutions/whisper.cpp
-	branch = develop
+[submodule "ai_processing/whisper.cpp"]
+	path = ai_processing/whisper.cpp
+	url = https://github.com/ggerganov/whisper.cpp.git
