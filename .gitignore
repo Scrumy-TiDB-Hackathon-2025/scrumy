@@ -295,7 +295,7 @@ SCRUMBOT_COMPREHENSIVE_SUMMARY.md
 # ----------------
 PARTICIPANT_DATA_INTEGRATION_ANALYSIS.md
 EPIC_AUGMENTATION_GUIDE.md
-INTEGRATION/
+# Removed overly broad INTEGRATION/ rule - was blocking integration directory
 
 # ----------------
 # Test Files (Internal Use Only)
