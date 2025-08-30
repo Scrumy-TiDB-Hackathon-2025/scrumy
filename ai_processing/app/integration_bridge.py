@@ -19,19 +19,154 @@ import asyncio
 from typing import Dict, List, Optional
 import logging
 
-# Add integration directory to path to import integration modules
-current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(os.path.dirname(current_dir))
-integration_path = os.path.join(project_root, 'integration')
-sys.path.insert(0, integration_path)
+# Load shared environment variables first
+def load_shared_env():
+    """Load shared environment variables from /shared/.tidb.env"""
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(os.path.dirname(current_dir))
+    shared_env_path = os.path.join(project_root, 'shared', '.tidb.env')
+    
+    if os.path.exists(shared_env_path):
+        with open(shared_env_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    # Remove quotes if present
+                    value = value.strip('"\'')
+                    os.environ[key] = value
+        logging.info(f"Loaded shared environment from {shared_env_path}")
+    else:
+        logging.warning(f"Shared environment file not found: {shared_env_path}")
 
+# Global flag to track integration availability
+INTEGRATION_AVAILABLE = False
+ToolRegistry = None
+IntegrationManager = None
+
+def _import_integration_system():
+    """Import integration system modules after path setup"""
+    global INTEGRATION_AVAILABLE, ToolRegistry, IntegrationManager
+    
+    if INTEGRATION_AVAILABLE:
+        return True
+    
+    # Load shared environment
+    load_shared_env()
+    
+    # Use absolute path to integration directory
+    # Get the absolute path to this file and work backwards
+    current_file = os.path.abspath(__file__)
+    ai_processing_dir = os.path.dirname(os.path.dirname(current_file))  # /path/to/ai_processing
+    project_root = os.path.dirname(ai_processing_dir)  # /path/to/scrumy-clean
+    integration_path = os.path.join(project_root, 'integration')
+    
+    logging.info(f"DEBUG: Current file: {current_file}")
+    logging.info(f"DEBUG: AI processing dir: {ai_processing_dir}")
+    logging.info(f"DEBUG: Project root: {project_root}")
+    logging.info(f"DEBUG: Integration path: {integration_path}")
+    logging.info(f"DEBUG: Integration path exists: {os.path.exists(integration_path)}")
+    
+    if not os.path.exists(integration_path):
+        logging.warning(f"Integration path does not exist: {integration_path}")
+        return False
+    
+    app_path = os.path.join(integration_path, 'app')
+    tools_path = os.path.join(app_path, 'tools.py')
+    logging.info(f"DEBUG: App path exists: {os.path.exists(app_path)}")
+    logging.info(f"DEBUG: Tools path exists: {os.path.exists(tools_path)}")
+    
+    # Remove any conflicting app paths and add integration path first
+    # Remove AI processing app path to avoid conflicts
+    ai_app_path = os.path.join(ai_processing_dir, 'app')
+    if ai_app_path in sys.path:
+        sys.path.remove(ai_app_path)
+        logging.info(f"DEBUG: Removed conflicting AI app path: {ai_app_path}")
+    
+    # Store reference to AI processing app module before clearing
+    ai_app_module = sys.modules.get('app')
+    ai_app_submodules = {key: sys.modules[key] for key in sys.modules.keys() if key.startswith('app.')}
+    
+    # Clear any cached 'app' module to avoid conflicts during integration import
+    if 'app' in sys.modules:
+        del sys.modules['app']
+        logging.info(f"DEBUG: Temporarily cleared 'app' module from sys.modules cache")
+    
+    # Also clear any app.* submodules that might be cached
+    modules_to_clear = [key for key in sys.modules.keys() if key.startswith('app.')]
+    for module_key in modules_to_clear:
+        del sys.modules[module_key]
+        logging.info(f"DEBUG: Temporarily cleared '{module_key}' from sys.modules cache")
+    
+    # Add integration path to sys.path if not already there
+    if integration_path not in sys.path:
+        sys.path.insert(0, integration_path)
+        logging.info(f"DEBUG: Added to sys.path: {integration_path}")
+    else:
+        # Move it to the front if it's already there
+        sys.path.remove(integration_path)
+        sys.path.insert(0, integration_path)
+        logging.info(f"DEBUG: Moved integration path to front of sys.path")
+    
+    try:
+        from app.tools import ToolRegistry as _ToolRegistry
+        from app.integrations import IntegrationManager as _IntegrationManager
+        ToolRegistry = _ToolRegistry
+        IntegrationManager = _IntegrationManager
+        INTEGRATION_AVAILABLE = True
+        logging.info("Integration system imported successfully")
+        
+        # Restore AI processing app modules after successful integration import
+        if ai_app_module:
+            sys.modules['app'] = ai_app_module
+            logging.info(f"DEBUG: Restored AI processing 'app' module")
+        
+        for module_key, module_obj in ai_app_submodules.items():
+            sys.modules[module_key] = module_obj
+            logging.info(f"DEBUG: Restored AI processing '{module_key}' module")
+        
+        return True
+    except ImportError as e:
+        logging.warning(f"Integration system not available: {e}")
+        logging.warning(f"DEBUG: sys.path first 5 entries: {sys.path[:5]}")
+        logging.warning(f"DEBUG: Current working directory: {os.getcwd()}")
+        
+        # Restore AI processing app modules after failed integration import
+        if ai_app_module:
+            sys.modules['app'] = ai_app_module
+            logging.info(f"DEBUG: Restored AI processing 'app' module after failed import")
+        
+        for module_key, module_obj in ai_app_submodules.items():
+            sys.modules[module_key] = module_obj
+            logging.info(f"DEBUG: Restored AI processing '{module_key}' module after failed import")
+        
+        # Try to diagnose the issue further
+        try:
+            import app
+            logging.warning(f"DEBUG: 'app' module found at: {getattr(app, '__file__', 'No __file__ attribute')}")
+            logging.warning(f"DEBUG: 'app' module path: {getattr(app, '__path__', 'No __path__ attribute')}")
+            logging.warning(f"DEBUG: 'app' module contents: {dir(app)}")
+            
+            # Check if tools module exists in this app
+            try:
+                import app.tools
+                logging.warning(f"DEBUG: app.tools found at: {getattr(app.tools, '__file__', 'No __file__ attribute')}")
+            except ImportError as tools_e:
+                logging.warning(f"DEBUG: app.tools not found: {tools_e}")
+                
+        except Exception as app_e:
+            logging.warning(f"DEBUG: Could not import 'app' module: {app_e}")
+        
+        INTEGRATION_AVAILABLE = False
+        return False
+
+# Import our new database task manager
 try:
-    from app.tools import ToolRegistry
-    from app.integrations import IntegrationManager
-    INTEGRATION_AVAILABLE = True
+    from .database_task_manager import DatabaseTaskManager
+    DATABASE_MANAGER_AVAILABLE = True
 except ImportError as e:
-    logging.warning(f"Integration system not available: {e}")
-    INTEGRATION_AVAILABLE = False
+    logging.warning(f"Database task manager not available: {e}")
+    DATABASE_MANAGER_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -58,19 +193,33 @@ class AIProcessingIntegrationBridge:
                    }
         """
         self.config = config or {}
-        self.enabled = self.config.get("enabled", True) and INTEGRATION_AVAILABLE
         self.mock_mode = self.config.get("mock_mode", False)
         
-        if self.enabled:
+        # Initialize database task manager for two-layer architecture
+        if DATABASE_MANAGER_AVAILABLE:
+            self.db_manager = DatabaseTaskManager()
+            logger.info("Database task manager initialized")
+        else:
+            self.db_manager = None
+            logger.warning("Database task manager not available")
+        
+        # Try to import integration system and set enabled based on result
+        config_enabled = self.config.get("enabled", True)
+        if config_enabled and _import_integration_system():
             try:
                 self.tools_registry = ToolRegistry()
                 self.integration_manager = IntegrationManager()
+                self.enabled = True
                 logger.info("Integration bridge initialized successfully")
             except Exception as e:
                 logger.error(f"Failed to initialize integration components: {e}")
                 self.enabled = False
         else:
-            logger.info("Integration bridge disabled or not available")
+            self.enabled = False
+            if not config_enabled:
+                logger.info("Integration bridge disabled by configuration")
+            else:
+                logger.info("Integration bridge disabled - import failed")
     
     def _transform_ai_task_to_integration_format(self, ai_task: Dict) -> Dict:
         """
@@ -128,10 +277,10 @@ class AIProcessingIntegrationBridge:
     async def create_tasks_from_ai_results(self, ai_tasks: List[Dict], 
                                          meeting_context: Optional[Dict] = None) -> Dict:
         """
-        Create tasks in integration platforms based on AI-extracted tasks.
+        Create tasks in integration platforms using two-layer architecture.
         
         Args:
-            ai_tasks: List of tasks extracted by AI processing
+            ai_tasks: List of tasks extracted by AI processing (with all fields)
             meeting_context: Optional context about the meeting
             
         Returns:
@@ -158,6 +307,25 @@ class AIProcessingIntegrationBridge:
                 "errors": []
             }
         
+        # Use two-layer architecture if database manager is available
+        if self.db_manager:
+            meeting_id = meeting_context.get('meeting_id', f"meeting_{int(asyncio.get_event_loop().time())}") if meeting_context else f"meeting_{int(asyncio.get_event_loop().time())}"
+            
+            # Layer 1: Store all AI fields in database
+            storage_result = self.db_manager.store_comprehensive_tasks(ai_tasks, meeting_id)
+            
+            # Layer 2: Get filtered tasks for integration platforms
+            integration_tasks = self.db_manager.get_integration_tasks(
+                storage_result["stored_tasks"], 
+                platform="integration"
+            )
+            
+            logger.info(f"Two-layer architecture: {len(ai_tasks)} AI tasks → {len(storage_result['stored_tasks'])} stored → {len(integration_tasks)} filtered for integration")
+        else:
+            # Fallback to old method if database manager not available
+            integration_tasks = [self._transform_ai_task_to_integration_format(task) for task in ai_tasks]
+            logger.warning("Using fallback task transformation (database manager not available)")
+        
         results = {
             "integration_enabled": True,
             "tasks_processed": len(ai_tasks),
@@ -168,22 +336,16 @@ class AIProcessingIntegrationBridge:
             "errors": []
         }
         
-        logger.info(f"Processing {len(ai_tasks)} tasks for integration")
+        logger.info(f"Processing {len(integration_tasks)} filtered tasks for integration platforms")
         
-        for i, ai_task in enumerate(ai_tasks):
+        for i, integration_task in enumerate(integration_tasks):
             try:
-                # Transform task format
-                integration_task = self._transform_ai_task_to_integration_format(ai_task)
-                
-                # Create task using tools registry
+                # Create task using tools registry with filtered fields
                 result = await self.tools_registry.create_task_everywhere(
                     title=integration_task["title"],
                     description=integration_task["description"],
                     assignee=integration_task["assignee"],
                     priority=integration_task["priority"]
-                    # TODO: Add when supported:
-                    # meeting_id=integration_task.get("meeting_id"),
-                    # due_date=integration_task.get("due_date")
                 )
                 
                 if result.get("task_created"):

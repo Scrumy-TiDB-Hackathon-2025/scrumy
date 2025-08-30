@@ -176,6 +176,11 @@ secrets.json
 **/*secret*
 **/*password*
 
+# Shared environment files
+shared/.tidb.env
+shared/.env*
+!shared/.env.example
+
 # SSL certificates (from scan)
 **/certifi/cacert.pem
 
