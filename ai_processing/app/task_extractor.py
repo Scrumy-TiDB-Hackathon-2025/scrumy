@@ -200,7 +200,12 @@ class TaskExtractor:
             if not response or not response.strip():
                 return {"tasks": []}
 
-            result = json.loads(response)
+            # Extract JSON from response (AI might include extra text)
+            json_str = self._extract_json_from_response(response)
+            if not json_str:
+                return {"tasks": []}
+
+            result = json.loads(json_str)
 
             # Validate result structure
             if not isinstance(result, dict):
@@ -299,7 +304,12 @@ class TaskExtractor:
             if not response or not response.strip():
                 return {"tasks": []}
 
-            result = json.loads(response)
+            # Extract JSON from response (AI might include extra text)
+            json_str = self._extract_json_from_response(response)
+            if not json_str:
+                return {"tasks": []}
+
+            result = json.loads(json_str)
 
             # Validate result structure
             if not isinstance(result, dict):
@@ -392,7 +402,12 @@ class TaskExtractor:
             if not response or not response.strip():
                 return {"dependencies": [], "critical_path": [], "parallel_tracks": []}
 
-            result = json.loads(response)
+            # Extract JSON from response (AI might include extra text)
+            json_str = self._extract_json_from_response(response)
+            if not json_str:
+                return {"dependencies": [], "critical_path": [], "parallel_tracks": []}
+
+            result = json.loads(json_str)
 
             # Validate result structure and provide defaults
             if not isinstance(result, dict):
@@ -484,7 +499,12 @@ class TaskExtractor:
             if not response or not response.strip():
                 return {"task_priorities": []}
 
-            result = json.loads(response)
+            # Extract JSON from response (AI might include extra text)
+            json_str = self._extract_json_from_response(response)
+            if not json_str:
+                return {"task_priorities": []}
+
+            result = json.loads(json_str)
 
             # Validate result structure
             if not isinstance(result, dict):
@@ -562,6 +582,34 @@ class TaskExtractor:
         return all_tasks
 
 
+
+    def _extract_json_from_response(self, response: str) -> str:
+        """Extract JSON from AI response that might contain extra text"""
+        if not response:
+            return ""
+        
+        # Look for JSON object starting with { and ending with }
+        start_idx = response.find('{')
+        if start_idx == -1:
+            return ""
+        
+        # Find the matching closing brace
+        brace_count = 0
+        end_idx = -1
+        
+        for i in range(start_idx, len(response)):
+            if response[i] == '{':
+                brace_count += 1
+            elif response[i] == '}':
+                brace_count -= 1
+                if brace_count == 0:
+                    end_idx = i
+                    break
+        
+        if end_idx == -1:
+            return ""
+        
+        return response[start_idx:end_idx + 1]
 
     def _tasks_similar(self, title1: str, title2: str, threshold: float = 0.7) -> bool:
 
