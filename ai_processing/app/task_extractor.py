@@ -1,6 +1,6 @@
 import json
 from typing import Dict, List
-from datetime import datetime, timedelta
+from datetime import datetime
 import re
 import asyncio
 
@@ -31,7 +31,7 @@ class TaskExtractor:
                 "extraction_metadata": {
                     "explicit_tasks_found": 0,
                     "implicit_tasks_found": 0,
-                    "extracted_at": datetime.now().isoformat(),
+                    "extracted_at": datetime.datetime.now().isoformat(),
                     "error": "No transcript provided for task extraction"
                 }
             }

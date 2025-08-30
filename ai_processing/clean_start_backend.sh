@@ -15,6 +15,11 @@ NC='\033[0m' # No Color
 PACKAGE_NAME="whisper-server-package"
 MODEL_DIR="$PACKAGE_NAME/models"
 
+# Whisper.cpp configuration (what the backend actually uses)
+WHISPER_CPP_DIR="whisper.cpp"
+WHISPER_EXECUTABLE="$WHISPER_CPP_DIR/build/bin/whisper-cli"
+WHISPER_MODEL_DIR="$WHISPER_CPP_DIR/models"
+
 # Helper functions for logging
 log_info() {
     echo -e "${BLUE}ℹ️  [INFO]${NC} $1"
@@ -71,10 +76,26 @@ trap cleanup EXIT INT TERM
 # Check if required directories and files exist
 log_section "Environment Check"
 
-if [ ! -d "$PACKAGE_NAME" ]; then
-    handle_error "Whisper server directory not found. Please run build_whisper.sh first"
+# Check for Whisper (what the backend actually uses)
+WHISPER_AVAILABLE=false
+if [ -f "$WHISPER_EXECUTABLE" ] && [ -d "$WHISPER_MODEL_DIR" ]; then
+    # Check if we have at least one model
+    if ls "$WHISPER_MODEL_DIR"/ggml-*.bin >/dev/null 2>&1; then
+        log_success "Whisper.cpp executable and models found"
+        WHISPER_AVAILABLE=true
+    else
+        log_warning "Whisper.cpp executable found but no models available"
+        log_info "Models directory: $WHISPER_MODEL_DIR"
+    fi
+elif [ -f "$WHISPER_EXECUTABLE" ]; then
+    log_warning "Whisper.cpp executable found but models directory missing"
+    log_info "Expected models at: $WHISPER_MODEL_DIR"
+else
+    log_warning "Whisper.cpp not built. Transcription will not be available."
+    log_info "To enable Whisper: build whisper.cpp first"
 fi
 
+# Check for Python backend (required)
 if [ ! -d "app" ]; then
     handle_error "Python backend directory not found. Please check your installation"
 fi
@@ -83,8 +104,38 @@ if [ ! -f "app/main.py" ]; then
     handle_error "Python backend main.py not found. Please check your installation"
 fi
 
+# Check for virtual environment (create if needed)
 if [ ! -d "venv" ]; then
-    handle_error "Virtual environment not found. Please run build_whisper.sh first"
+    log_warning "Virtual environment not found. Creating one..."
+    log_info "Running: python -m venv venv"
+    
+    if ! python -m venv venv; then
+        handle_error "Failed to create virtual environment. Please ensure Python is installed."
+    fi
+    
+    log_success "Virtual environment created successfully"
+    
+    # Activate and install dependencies
+    log_info "Activating virtual environment and installing dependencies..."
+    if ! source venv/bin/activate; then
+        handle_error "Failed to activate virtual environment"
+    fi
+    
+    if [ -f "requirements.txt" ]; then
+        log_info "Installing requirements from requirements.txt..."
+        if ! pip install -r requirements.txt; then
+            handle_error "Failed to install requirements"
+        fi
+        log_success "Requirements installed successfully"
+    else
+        log_warning "requirements.txt not found, installing basic dependencies..."
+        if ! pip install fastapi uvicorn python-multipart; then
+            handle_error "Failed to install basic dependencies"
+        fi
+        log_success "Basic dependencies installed"
+    fi
+else
+    log_success "Virtual environment found"
 fi
 
 # Kill any existing whisper-server processes
@@ -121,98 +172,41 @@ fi
 
 
 
-# Check for existing model
-log_section "Model Check"
+# Check for existing model (only if Whisper is available)
+if [ "$WHISPER_AVAILABLE" = true ]; then
+    log_section "Model Check"
 
-if [ ! -d "$MODEL_DIR" ]; then
-    handle_error "Models directory not found. Please run build_whisper.sh first"
-fi
+    log_info "Checking for Whisper models..."
+    EXISTING_MODELS=$(find "$WHISPER_MODEL_DIR" -name "ggml-*.bin" -type f 2>/dev/null)
 
-log_info "Checking for Whisper models..."
-EXISTING_MODELS=$(find "$MODEL_DIR" -name "ggml-*.bin" -type f)
-
-if [ -n "$EXISTING_MODELS" ]; then
-    log_success "Found existing models:"
-    echo -e "${BLUE}$EXISTING_MODELS${NC}"
-else
-    log_warning "No existing models found"
-fi
-
-# Whisper models
-models="tiny
-tiny.en
-tiny-q5_1
-base
-base.en
-base-q5_1
-small
-small.en
-small-q5_1
-medium
-medium.en
-medium-q5_1
-large-v1
-large-v2
-large-v3
-large-v1-q5_1
-large-v2-q5_1
-large-v3-q5_1
-large-v1-turbo
-large-v2-turbo
-large-v3-turbo
-large-v1-turbo-q5_0
-large-v2-turbo-q5_0
-large-v3-turbo-q5_0
-large-v1-turbo-q8_0
-large-v2-turbo-q8_0
-large-v3-turbo-q8_0"
-
-# Ask user which model to use if the argument is not provided
-if [ -z "$1" ]; then
-    log_section "Model Selection"
-    log_info "Available models:"
-    echo -e "${BLUE}$models${NC}"
-    read -p "$(echo -e "${YELLOW}🎯 Enter a model name (e.g. small):${NC} ")" MODEL_SHORT_NAME
-else
-    MODEL_SHORT_NAME=$1
-fi
-
-# Check if the model is valid
-if ! echo "$models" | grep -qw "$MODEL_SHORT_NAME"; then
-    handle_error "Invalid model: $MODEL_SHORT_NAME"
-fi
-
-MODEL_NAME="ggml-$MODEL_SHORT_NAME.bin"
-log_success "Selected model: $MODEL_NAME"
-
-# Check if the modelname exists in directory
-if [ -f "$MODEL_DIR/$MODEL_NAME" ]; then
-    log_success "Model file exists: $MODEL_DIR/$MODEL_NAME"
-else
-    log_warning "Model file does not exist: $MODEL_DIR/$MODEL_NAME"
-    log_info "Downloading model... 📥"
-    if ! ./download-ggml-model.sh $MODEL_SHORT_NAME; then
-        handle_error "Failed to download model"
+    if [ -n "$EXISTING_MODELS" ]; then
+        log_success "Found existing models:"
+        echo -e "${BLUE}$EXISTING_MODELS${NC}"
+    else
+        log_warning "No existing models found in $WHISPER_MODEL_DIR"
     fi
+fi
 
-    # Move model to models directory
-    mv "$MODEL_NAME" "$MODEL_DIR/" || handle_error "Failed to move model to models directory"
+# Backend uses hardcoded model path: whisper.cpp/models/ggml-base.en.bin
+if [ "$WHISPER_AVAILABLE" = true ]; then
+    REQUIRED_MODEL="$WHISPER_MODEL_DIR/ggml-base.en.bin"
+    if [ -f "$REQUIRED_MODEL" ]; then
+        log_success "Required model found: $REQUIRED_MODEL"
+    else
+        log_warning "Required model not found: $REQUIRED_MODEL"
+        log_info "Backend will show error if transcription is attempted"
+    fi
 fi
 
 log_section "Starting Services"
 
-# Start the whisper server in background
-log_info "Starting Whisper server... 🎙️"
-cd "$PACKAGE_NAME" || handle_error "Failed to change to whisper-server directory"
-./run-server.sh --model "models/$MODEL_NAME" &
-WHISPER_PID=$!
-cd .. || handle_error "Failed to return to root directory"
-
-# Wait for server to start and check if it's running
-sleep 2
-if ! kill -0 $WHISPER_PID 2>/dev/null; then
-    handle_error "Whisper server failed to start"
+# Note: Backend uses whisper.cpp directly, no separate server needed
+if [ "$WHISPER_AVAILABLE" = true ]; then
+    log_info "Whisper.cpp ready for transcription 🎙️"
+else
+    log_info "Whisper.cpp not available - transcription disabled"
 fi
+WHISPER_PID=""
 
 # Start the Python backend in background
 log_info "Starting Python backend... 🚀"
@@ -226,10 +220,12 @@ fi
 
 # Check if required Python packages are installed
 if ! pip show fastapi >/dev/null 2>&1; then
-    handle_error "FastAPI not found. Please run build_whisper.sh to install dependencies"
+    handle_error "FastAPI not found. Please install dependencies first"
 fi
 
-python app/main.py &
+# Start the backend with proper Python path and output redirection
+log_info "Redirecting backend output to backend.log..."
+PYTHONPATH=. python app/main.py > backend.log 2>&1 &
 PYTHON_PID=$!
 
 # Wait for backend to start and check if it's running
@@ -243,14 +239,39 @@ if ! lsof -i :$PORT | grep -q LISTEN; then
     handle_error "Python backend is not listening on port $PORT"
 fi
 
-log_success "🎉 All services started successfully!"
-echo -e "${GREEN}🔍 Whisper Server (PID: $WHISPER_PID)${NC}"
-echo -e "${GREEN}🐍 Python Backend (PID: $PYTHON_PID)${NC}"
+log_success "🎉 Services started successfully!"
+
+echo -e "${GREEN}🐍 Python Backend (PID: $PYTHON_PID) - Port: 5167${NC}"
+echo -e "${BLUE}  📄 Backend logs: backend.log${NC}"
+
+if [ "$WHISPER_AVAILABLE" = true ]; then
+    echo -e "${GREEN}🎙️ Whisper.cpp: Ready for transcription${NC}"
+    echo -e "${BLUE}  📍 Executable: $WHISPER_EXECUTABLE${NC}"
+    echo -e "${BLUE}  📁 Models: $WHISPER_MODEL_DIR${NC}"
+else
+    echo -e "${YELLOW}🎙️ Whisper.cpp: Not available${NC}"
+fi
+
 echo -e "${BLUE}Press Ctrl+C to stop all services${NC}"
 
-# Show whisper server port and python backend port
-echo -e "${BLUE}Whisper Server Port: $PORT${NC}"
-echo -e "${BLUE}Python Backend Port: 8178${NC}"
+# Show available endpoints
+echo -e "\n${BLUE}📡 Available Endpoints:${NC}"
+echo -e "${BLUE}  - API Documentation: http://localhost:5167/docs${NC}"
+echo -e "${BLUE}  - Process Complete Meeting: POST http://localhost:5167/process-complete-meeting${NC}"
 
-# Keep the script running and wait for both processes
-wait $WHISPER_PID $PYTHON_PID || handle_error "One of the services crashed"
+if [ "$WHISPER_AVAILABLE" = true ]; then
+    echo -e "${GREEN}  - Audio Transcription: POST http://localhost:5167/transcribe${NC}"
+else
+    echo -e "${YELLOW}  - Audio Transcription: Unavailable (Whisper.cpp not built)${NC}"
+fi
+
+# Show log monitoring commands
+echo -e "\n${BLUE}📊 Monitor Logs:${NC}"
+echo -e "${BLUE}  - Backend: tail -f backend.log${NC}"
+
+# Keep the script running and wait for processes
+if [ "$WHISPER_AVAILABLE" = true ] && [ -n "$WHISPER_PID" ]; then
+    wait $WHISPER_PID $PYTHON_PID || handle_error "One of the services crashed"
+else
+    wait $PYTHON_PID || handle_error "Python backend crashed"
+fi

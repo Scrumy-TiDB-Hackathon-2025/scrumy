@@ -837,7 +837,7 @@ async def generate_summary(request: GenerateSummaryRequest):
                     'total_participants': len(summary.get('participants', [])),
                     'participation_balance': summary.get('participation_balance', 'balanced')
                 },
-                'summary_generated_at': datetime.now().isoformat()
+                'summary_generated_at': datetime.datetime.now().isoformat()
             }
         }
 
@@ -875,7 +875,7 @@ async def extract_tasks(request: ExtractTasksRequest):
                         'category': task.get('category', 'action_item'),
                         'dependencies': task.get('dependencies', []),
                         'business_impact': task.get('priority', 'medium'),
-                        'created_at': datetime.now().isoformat()
+                        'created_at': datetime.datetime.now().isoformat()
                     })
 
         return {
@@ -891,7 +891,7 @@ async def extract_tasks(request: ExtractTasksRequest):
                 'extraction_metadata': {
                     'explicit_tasks_found': len(formatted_tasks),
                     'implicit_tasks_found': 0,
-                    'extracted_at': datetime.now().isoformat()
+                    'extracted_at': datetime.datetime.now().isoformat()
                 }
             }
         }
@@ -951,7 +951,7 @@ async def process_transcript_with_tools(request: ProcessTranscriptWithToolsReque
             'actions_taken': result.get('tasks', []),
             'speakers': result.get('speakers', []),
             'tools_used': 3,  # Speaker ID, Summary, Tasks
-            'processed_at': datetime.now().isoformat()
+            'processed_at': datetime.datetime.now().isoformat()
         }
 
     except Exception as e:
