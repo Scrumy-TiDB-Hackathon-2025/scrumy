@@ -27,8 +27,8 @@ class AudioProcessor:
     """Handle audio chunk processing and transcription"""
 
     def __init__(self):
-        self.whisper_model_path = os.getenv('WHISPER_MODEL_PATH', './whisper-server-package/models/ggml-tiny.bin')
-        self.whisper_executable = os.getenv('WHISPER_EXECUTABLE', './whisper.cpp/build/bin/main')
+        self.whisper_model_path = os.getenv('WHISPER_MODEL_PATH', './whisper.cpp/models/ggml-base.en.bin')
+        self.whisper_executable = os.getenv('WHISPER_EXECUTABLE', './whisper.cpp/build/bin/whisper-cli')
 
     async def process_audio_chunk(self, audio_data: bytes, metadata: Dict) -> Dict:
         """Process audio chunk and return transcription"""
