@@ -19,6 +19,7 @@ from app.speaker_identifier import SpeakerIdentifier
 from app.meeting_summarizer import MeetingSummarizer
 from app.task_extractor import TaskExtractor
 from app.integration_adapter import ParticipantData, notify_meeting_processed
+from app.meeting_buffer import MeetingBuffer, TranscriptChunk, BatchProcessor
 import subprocess
 
 logger = logging.getLogger(__name__)
@@ -129,6 +130,10 @@ class MeetingSession:
         self.speaker_identifier = SpeakerIdentifier(self.ai_processor)
         self.meeting_summarizer = MeetingSummarizer(self.ai_processor)
         self.task_extractor = TaskExtractor(self.ai_processor)
+        
+        # Initialize optimized buffer system
+        self.buffer = MeetingBuffer(meeting_id)
+        self.batch_processor = BatchProcessor(self.ai_processor)
 
     def add_transcript_chunk(self, chunk: Dict):
         """Add transcription chunk to session"""
@@ -219,6 +224,7 @@ class WebSocketManager:
         self.active_connections: Dict[WebSocket, Dict] = {}
         self.meeting_sessions: Dict[str, MeetingSession] = {}
         self.audio_processor = AudioProcessor()
+        self.batch_processor = None  # Initialized when first session is created
 
     async def connect(self, websocket: WebSocket, client_info: Dict):
         """Handle new WebSocket connection"""
@@ -340,22 +346,39 @@ class WebSocketManager:
             # Add to session
             session.add_transcript_chunk(transcription_result)
 
-            # Identify speakers if we have text
+            # Add to buffer instead of immediate AI processing
             if transcription_result.get('text'):
-                # Pass participant context to speaker identification
-                participant_names = session.get_participant_names()
-                speaker_info = await session.identify_speakers(
-                    transcription_result['text'],
-                    participant_context=participant_names
+                # Create transcript chunk for buffer
+                chunk = TranscriptChunk(
+                    timestamp_start=len(session.transcript_chunks) * 5.0,  # Estimate based on chunk index
+                    timestamp_end=(len(session.transcript_chunks) + 1) * 5.0,
+                    raw_text=transcription_result['text'],
+                    participants_present=participants,
+                    confidence=transcription_result.get('confidence', 0.85),
+                    chunk_index=len(session.transcript_chunks)
                 )
-                transcription_result['speakers'] = speaker_info.get('speakers', [])
+                
+                # Add to buffer (no AI call yet)
+                session.buffer.add_chunk(chunk)
+                
+                # Check if we should process batch
+                if session.buffer.should_process_batch():
+                    logger.info(f"Triggering batch processing for meeting {meeting_id}")
+                    session.batch_processor.start_batch_processing(session.buffer)
+                
+                # Use fallback speaker identification for immediate response
+                speaker_name = session.buffer._fallback_speaker_identification(chunk)
+                transcription_result['speakers'] = [{'name': speaker_name}] if speaker_name != 'Unknown' else []
 
             # Send transcription result back to client - support shared contract format
+            speakers = transcription_result.get('speakers', [])
+            speaker_name = speakers[0].get('name', 'Unknown') if speakers else 'Unknown'
+            
             response_data = {
                 'text': transcription_result.get('text', ''),
                 'confidence': transcription_result.get('confidence', 0.0),
                 'timestamp': transcription_result.get('timestamp'),
-                'speaker': transcription_result.get('speakers', [{}])[0].get('name', 'Unknown') if transcription_result.get('speakers') else 'Unknown'
+                'speaker': speaker_name
             }
 
             # Send both formats for compatibility
