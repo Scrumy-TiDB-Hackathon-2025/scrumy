@@ -900,6 +900,90 @@ async def extract_tasks(request: ExtractTasksRequest):
         logger.error(f"Task extraction error: {e}")
         raise HTTPException(status_code=500, detail=f"Task extraction failed: {str(e)}")
 
+@app.post("/extract-tasks-comprehensive")
+async def extract_tasks_comprehensive(request: ExtractTasksRequest):
+    """Extract tasks with comprehensive database storage and integration filtering - NO REDUNDANCY"""
+    try:
+        from app.task_extractor import TaskExtractor
+        from app.database_task_manager import DatabaseTaskManager
+        
+        # Step 1: AI extraction (REUSES existing TaskExtractor - no redundancy)
+        ai_processor = AIProcessor()
+        task_extractor = TaskExtractor(ai_processor)
+        
+        meeting_id = request.meeting_context.get('meeting_id', f"meeting_{int(datetime.datetime.now().timestamp())}") if request.meeting_context else f"meeting_{int(datetime.datetime.now().timestamp())}"
+        
+        # Extract tasks using existing extractor (no duplicate code)
+        ai_result = await task_extractor.extract_comprehensive_tasks(
+            request.transcript,
+            request.meeting_context or {}
+        )
+        
+        if not ai_result or 'tasks' not in ai_result:
+            return {
+                "status": "error",
+                "error": "AI extraction failed",
+                "data": {"ai_extraction": {"tasks": []}, "database_storage": {"stored_tasks": []}, "integration_tasks": []}
+            }
+        
+        # Step 2: Database storage + integration filtering (NEW functionality)
+        db_manager = DatabaseTaskManager()
+        
+        # Store all AI fields in database (comprehensive)
+        storage_result = db_manager.store_comprehensive_tasks(
+            ai_result['tasks'], 
+            meeting_id
+        )
+        
+        # Get filtered tasks for integration platforms (only supported fields)
+        integration_tasks = db_manager.get_integration_tasks(
+            storage_result["stored_tasks"], 
+            platform="integration"
+        )
+        
+        # Get field mapping analysis
+        field_mapping = db_manager.show_field_mapping(storage_result["stored_tasks"])
+        
+        return {
+            "status": "success",
+            "data": {
+                # Original AI extraction results (all fields)
+                "ai_extraction": {"tasks": ai_result['tasks']},
+                
+                # Database storage results (all fields preserved)
+                "database_storage": storage_result,
+                
+                # Integration-ready tasks (filtered to supported fields only)
+                "integration_tasks": integration_tasks,
+                
+                # Field mapping analysis
+                "field_analysis": field_mapping,
+                
+                # Summary
+                "summary": {
+                    "total_ai_tasks": len(ai_result['tasks']),
+                    "database_fields_stored": len(storage_result["stored_tasks"][0].keys()) if storage_result["stored_tasks"] else 0,
+                    "integration_fields_available": len(integration_tasks[0].keys()) if integration_tasks else 0,
+                    "meeting_id": meeting_id,
+                    "architecture": "Two-layer: Database (all fields) + Integration (filtered fields)"
+                }
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Comprehensive task extraction error: {e}")
+        return {
+            "status": "error",
+            "error": f"Comprehensive task extraction failed: {str(e)}",
+            "data": {
+                "ai_extraction": {"tasks": []},
+                "database_storage": {"stored_tasks": []},
+                "integration_tasks": [],
+                "field_analysis": {"available_fields": []},
+                "summary": {"total_ai_tasks": 0}
+            }
+        }
+
 @app.post("/process-transcript-with-tools")
 async def process_transcript_with_tools(request: ProcessTranscriptWithToolsRequest):
     """Process transcript with all AI tools - Chrome extension compatible"""
