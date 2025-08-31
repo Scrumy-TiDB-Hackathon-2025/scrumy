@@ -336,10 +336,20 @@ class AIProcessingIntegrationBridge:
             "errors": []
         }
         
+        # Initialize pipeline logger if available from meeting context
+        pipeline_logger = meeting_context.get('pipeline_logger') if meeting_context else None
+        
         logger.info(f"Processing {len(integration_tasks)} filtered tasks for integration platforms")
         
         for i, integration_task in enumerate(integration_tasks):
             try:
+                # Log task extraction if logger available
+                if pipeline_logger:
+                    pipeline_logger.log_task_extraction({
+                        "tasks": [integration_task],
+                        "summary": meeting_context.get('summary', '') if meeting_context else ''
+                    })
+                
                 # Create task using tools registry with filtered fields
                 result = await self.tools_registry.create_task_everywhere(
                     title=integration_task["title"],
@@ -347,6 +357,15 @@ class AIProcessingIntegrationBridge:
                     assignee=integration_task["assignee"],
                     priority=integration_task["priority"]
                 )
+                
+                # Log task creation result if logger available
+                if pipeline_logger:
+                    for platform, url in result.get("task_urls", {}).items():
+                        pipeline_logger.log_task_creation(platform, integration_task, {
+                            "success": True,
+                            "url": url,
+                            "platform_response": result.get(f"{platform}_response", {})
+                        })
                 
                 if result.get("task_created"):
                     results["tasks_created"] += 1

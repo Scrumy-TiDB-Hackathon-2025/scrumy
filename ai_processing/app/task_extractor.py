@@ -75,7 +75,7 @@ class TaskExtractor:
 
 
 
-            return {
+            result = {
 
                 "tasks": final_tasks,
 
@@ -99,9 +99,13 @@ class TaskExtractor:
 
                     "extracted_at": datetime.now().isoformat()
 
-                }
+                },
+
+                "summary": f"Extracted {len(final_tasks)} tasks from meeting transcript"
 
             }
+
+            return result
         except Exception as e:
             return {
                 "tasks": [],

@@ -20,6 +20,7 @@ from app.meeting_summarizer import MeetingSummarizer
 from app.task_extractor import TaskExtractor
 from app.integration_adapter import ParticipantData, notify_meeting_processed
 from app.meeting_buffer import MeetingBuffer, TranscriptChunk, BatchProcessor
+from app.pipeline_logger import PipelineLogger
 import subprocess
 
 logger = logging.getLogger(__name__)
@@ -331,6 +332,14 @@ class WebSocketManager:
 
             self.active_connections[websocket]['meeting_session'] = session
 
+            # Log audio chunk
+            session.buffer.logger.log_audio_chunk({
+                "audio_data": audio_data,
+                "participant": participants[0].get('name') if participants else 'Unknown',
+                "chunk_id": len(session.transcript_chunks),
+                "meeting_id": meeting_id
+            })
+
             # Convert base64 audio data to bytes if needed
             if isinstance(audio_data, str):
                 import base64
@@ -342,6 +351,13 @@ class WebSocketManager:
             transcription_result = await self.audio_processor.process_audio_chunk(
                 audio_bytes, metadata
             )
+            
+            # Log transcript chunk
+            if transcription_result.get('text'):
+                session.buffer.logger.log_transcript_chunk(
+                    transcription_result['text'],
+                    participants[0].get('name') if participants else 'Unknown'
+                )
 
             # Add to session
             session.add_transcript_chunk(transcription_result)
@@ -476,9 +492,19 @@ class WebSocketManager:
                 {'participants': list(session.participants)}
             )
 
-            # Notify integration systems with proper participant data
+            # Notify integration systems with proper participant data and logging
             try:
                 participant_objects = session.get_participant_data_objects()
+                
+                # Add pipeline logger to meeting context for integration logging
+                meeting_context_with_logger = {
+                    'meeting_id': session.meeting_id,
+                    'platform': session.platform,
+                    'participants': list(session.participants),
+                    'summary': summary,
+                    'pipeline_logger': session.buffer.logger
+                }
+                
                 await notify_meeting_processed(
                     meeting_id=session.meeting_id,
                     meeting_title=f"Meeting {session.meeting_id}",
@@ -488,11 +514,34 @@ class WebSocketManager:
                     transcript=session.cumulative_transcript,
                     summary_data=summary,
                     tasks_data=tasks,
-                    speakers_data=[]
+                    speakers_data=[],
+                    meeting_context=meeting_context_with_logger
                 )
+                
+                # Log pipeline summary
+                session.buffer.logger.log_pipeline_summary({
+                    "meeting_id": session.meeting_id,
+                    "platform": session.platform,
+                    "total_chunks": len(session.transcript_chunks),
+                    "participants": list(session.participants),
+                    "summary_length": len(summary.get('summary', '')),
+                    "tasks_extracted": len(tasks.get('tasks', [])),
+                    "duration": str(datetime.now() - session.start_time)
+                })
+                
                 logger.info(f"Notified integration systems for meeting {session.meeting_id}")
+                logger.info(f"Pipeline logs saved to: {session.buffer.logger.get_log_directory()}")
             except Exception as e:
                 logger.warning(f"Failed to notify integration systems: {e}")
+                # Still log pipeline summary on error
+                try:
+                    session.buffer.logger.log_pipeline_summary({
+                        "meeting_id": session.meeting_id,
+                        "error": str(e),
+                        "status": "failed"
+                    })
+                except:
+                    pass
 
             # Send final summary
             await self.send_message(websocket, {

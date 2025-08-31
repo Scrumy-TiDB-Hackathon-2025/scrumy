@@ -10,6 +10,7 @@ from typing import Dict, List, Optional
 from dataclasses import dataclass
 from datetime import datetime
 import logging
+from .pipeline_logger import PipelineLogger
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,10 @@ class MeetingBuffer:
         self.total_tokens = 0
         self.last_processed_index = 0
         self.last_batch_time = time.time()
+        
+        # Conditional debug logging
+        from .debug_logger import debug_manager
+        self.logger = debug_manager.get_logger(meeting_id)
         
         # Configuration
         self.BATCH_INTERVAL = 30  # seconds
@@ -102,6 +107,17 @@ Transcript with timestamps:
 
 Identify the speaker for each segment. Use participant names when possible.
 Return JSON format: {{"segments": [{{"timestamp": "[00:00-00:05]", "text": "...", "speaker": "Name"}}]}}"""
+        
+        # Log batch processing (only if debug enabled)
+        if self.logger:
+            chunk_data = [{
+                "timestamp_start": chunk.timestamp_start,
+                "timestamp_end": chunk.timestamp_end,
+                "text": chunk.raw_text,
+                "confidence": chunk.confidence
+            } for chunk in unprocessed_chunks]
+            
+            self.logger.log_batch_processing(chunk_data, chr(10).join(transcript_lines))
         
         return batch_prompt
     
@@ -211,10 +227,12 @@ class BatchProcessor:
     def __init__(self, ai_processor):
         self.ai_processor = ai_processor
         self.processing_tasks: Dict[str, asyncio.Task] = {}
+        self.current_logger: Optional[PipelineLogger] = None
     
     async def process_buffer_batch(self, buffer: MeetingBuffer) -> Dict:
         """Process buffer batch with Groq API"""
         try:
+            self.current_logger = buffer.logger
             batch_prompt = buffer.get_batch_for_processing()
             if not batch_prompt:
                 return {}
@@ -224,7 +242,15 @@ class BatchProcessor:
             Analyze the transcript and identify who is speaking in each segment based on context clues, 
             participant information, and speech patterns."""
             
+            # Log Groq request (only if debug enabled)
+            if self.current_logger:
+                self.current_logger.log_groq_request(batch_prompt, "groq-llama3-8b-8192")
+            
             response = await self.ai_processor.call_ollama(batch_prompt, system_prompt)
+            
+            # Log Groq response (only if debug enabled)
+            if self.current_logger:
+                self.current_logger.log_groq_response(response)
             
             # Parse JSON response
             import json
