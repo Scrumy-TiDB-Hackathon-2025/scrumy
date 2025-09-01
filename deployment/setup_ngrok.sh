@@ -7,8 +7,17 @@ set -e
 
 echo "🌐 Setting up ngrok tunnels..."
 
+# Check if ngrok is installed
+if ! command -v ngrok &> /dev/null; then
+    echo "❌ Ngrok not installed!"
+    echo "Installing ngrok..."
+    curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
+    echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
+    sudo apt update && sudo apt install ngrok
+fi
+
 # Check if ngrok auth token is configured
-if ! ngrok config check 2>/dev/null | grep -q "valid"; then
+if ! ngrok config check 2>/dev/null; then
     echo "❌ Ngrok not configured!"
     echo ""
     echo "🔧 MANUAL STEP REQUIRED:"
@@ -18,34 +27,18 @@ if ! ngrok config check 2>/dev/null | grep -q "valid"; then
     exit 1
 fi
 
-# Create ngrok configuration directory
-mkdir -p ~/.ngrok2
-
-# Create ngrok configuration
-cat > ~/.ngrok2/ngrok.yml << 'EOF'
+# Create ngrok configuration for multiple tunnels
+cat > ngrok.yml << 'EOF'
 version: "2"
-authtoken: # This will be set by ngrok config add-authtoken
 
 tunnels:
-  backend:
-    proto: http
-    addr: 5167
-    subdomain: # Optional: set custom subdomain
-    
   websocket:
     proto: http
     addr: 8080
-    subdomain: # Optional: set custom subdomain
     
   integration:
     proto: http
     addr: 3003
-    subdomain: # Optional: set custom subdomain
-
-  all:
-    proto: http
-    addr: 5167
-    subdomain: # Optional: set custom subdomain for main backend
 EOF
 
 echo "✅ Ngrok configuration created!"
@@ -55,8 +48,8 @@ echo "🚀 Starting ngrok tunnels..."
 # Ensure logs directory exists
 mkdir -p logs
 
-# Start ngrok in background for all services
-nohup ngrok start --all --config ~/.ngrok2/ngrok.yml > logs/ngrok.log 2>&1 &
+# Start ngrok in background for Chrome extension services
+nohup ngrok start --all --config ngrok.yml > logs/ngrok.log 2>&1 &
 
 # Wait for ngrok to start
 sleep 5
@@ -74,11 +67,14 @@ except:
 "
 
 echo ""
-echo "📋 Manual Configuration Required:"
-echo "1. Update Chrome extension with WebSocket URL"
-echo "2. Update any frontend configurations with backend URL"
-echo "3. Test Chrome extension connection"
 echo ""
-echo "🔍 Monitor ngrok:"
+echo "📋 NEXT STEPS:"
+echo "1. Copy the WebSocket HTTPS URL above"
+echo "2. Update Chrome extension manifest.json with the WebSocket URL"
+echo "3. Update integration service URL if needed"
+echo "4. Test Chrome extension on Google Meet/Zoom"
+echo ""
+echo "🔍 Monitor:"
 echo "  Ngrok dashboard: http://localhost:4040"
 echo "  Ngrok logs: tail -f logs/ngrok.log"
+echo "  PM2 status: pm2 status"
