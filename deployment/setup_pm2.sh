@@ -16,10 +16,9 @@ module.exports = {
   apps: [
     {
       name: 'scrumbot-backend',
-      script: 'python',
-      args: 'start_backend.py',
+      script: 'start_backend.py',
       cwd: './ai_processing',
-      interpreter: './venv/bin/python',
+      interpreter: './ai_processing/venv/bin/python',
       env: {
         PORT: 5167,
         DEBUG_LOGGING: 'false'
@@ -34,10 +33,9 @@ module.exports = {
     },
     {
       name: 'scrumbot-websocket',
-      script: 'python',
-      args: 'start_websocket_server.py',
+      script: 'start_websocket_server.py',
       cwd: './ai_processing',
-      interpreter: './venv/bin/python',
+      interpreter: './ai_processing/venv/bin/python',
       env: {
         PORT: 8080,
         DEBUG_LOGGING: 'false'
