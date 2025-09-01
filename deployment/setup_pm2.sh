@@ -17,52 +17,35 @@ module.exports = {
     {
       name: 'scrumbot-backend',
       script: 'start_backend.py',
-      cwd: './ai_processing',
-      interpreter: './ai_processing/venv/bin/python',
-      env: {
-        PORT: 5167,
-        DEBUG_LOGGING: 'false'
-      },
+      cwd: '/home/ubuntu/scrumy/ai_processing',
+      interpreter: '/home/ubuntu/scrumy/ai_processing/venv/bin/python',
+      env: { PORT: 5167, DEBUG_LOGGING: 'false' },
       instances: 1,
       autorestart: true,
       watch: false,
-      max_memory_restart: '500M',
-      error_file: './logs/backend-error.log',
-      out_file: './logs/backend-out.log',
-      log_file: './logs/backend-combined.log'
+      max_memory_restart: '500M'
     },
     {
       name: 'scrumbot-websocket',
       script: 'start_websocket_server.py',
-      cwd: './ai_processing',
-      interpreter: './ai_processing/venv/bin/python',
-      env: {
-        PORT: 8080,
-        DEBUG_LOGGING: 'false'
-      },
+      cwd: '/home/ubuntu/scrumy/ai_processing',
+      interpreter: '/home/ubuntu/scrumy/ai_processing/venv/bin/python',
+      env: { PORT: 8080, DEBUG_LOGGING: 'false' },
       instances: 1,
       autorestart: true,
       watch: false,
-      max_memory_restart: '300M',
-      error_file: './logs/websocket-error.log',
-      out_file: './logs/websocket-out.log',
-      log_file: './logs/websocket-combined.log'
+      max_memory_restart: '300M'
     },
     {
       name: 'scrumbot-integration',
       script: 'npm',
       args: 'start',
-      cwd: './integration',
-      env: {
-        PORT: 3003
-      },
+      cwd: '/home/ubuntu/scrumy/integration',
+      env: { PORT: 3003 },
       instances: 1,
       autorestart: true,
       watch: false,
-      max_memory_restart: '200M',
-      error_file: './logs/integration-error.log',
-      out_file: './logs/integration-out.log',
-      log_file: './logs/integration-combined.log'
+      max_memory_restart: '200M'
     }
   ]
 };
