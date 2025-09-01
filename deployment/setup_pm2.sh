@@ -36,17 +36,7 @@ module.exports = {
       watch: false,
       max_memory_restart: '300M'
     },
-    {
-      name: 'scrumbot-integration',
-      script: 'npm',
-      args: 'start',
-      cwd: '/home/ubuntu/scrumy/integration',
-      env: { PORT: 3003 },
-      instances: 1,
-      autorestart: true,
-      watch: false,
-      max_memory_restart: '200M'
-    }
+
   ]
 };
 EOF
@@ -65,6 +55,12 @@ pm2 save
 sudo pm2 startup systemd -u $USER --hp $HOME
 
 echo "✅ PM2 setup complete!"
+echo ""
+echo "🧪 Test services before ngrok:"
+echo "  curl http://localhost:5167/health  # Backend API"
+echo "  curl http://localhost:8080/health  # WebSocket server"
+echo "  netstat -tlnp | grep :5167        # Check backend port"
+echo "  netstat -tlnp | grep :8080        # Check websocket port"
 echo ""
 echo "📊 PM2 Commands:"
 echo "  pm2 status          - View process status"
