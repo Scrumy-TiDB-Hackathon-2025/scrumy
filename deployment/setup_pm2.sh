@@ -10,43 +10,13 @@ echo "⚙️  Setting up PM2 processes..."
 # Navigate to project root
 cd ~/scrumy
 
-# Create PM2 ecosystem file
-cat > ecosystem.config.js << 'EOF'
-module.exports = {
-  apps: [
-    {
-      name: 'scrumbot-backend',
-      script: 'start_backend.py',
-      cwd: '/home/ubuntu/scrumy/ai_processing',
-      interpreter: '/home/ubuntu/scrumy/ai_processing/venv/bin/python',
-      env: { PORT: 5167, DEBUG_LOGGING: 'false' },
-      instances: 1,
-      autorestart: true,
-      watch: false,
-      max_memory_restart: '500M'
-    },
-    {
-      name: 'scrumbot-websocket',
-      script: 'start_websocket_server.py',
-      cwd: '/home/ubuntu/scrumy/ai_processing',
-      interpreter: '/home/ubuntu/scrumy/ai_processing/venv/bin/python',
-      env: { PORT: 8080, DEBUG_LOGGING: 'false' },
-      instances: 1,
-      autorestart: true,
-      watch: false,
-      max_memory_restart: '300M'
-    },
+# Navigate to ai_processing directory
+cd ai_processing
 
-  ]
-};
-EOF
-
-# Create logs directory
-mkdir -p logs
-
-# Start PM2 processes
+# Start PM2 processes using direct commands (proven to work)
 echo "🚀 Starting PM2 processes..."
-pm2 start ecosystem.config.js
+pm2 start --name scrumbot-backend --interpreter venv/bin/python start_backend.py
+pm2 start --name scrumbot-websocket --interpreter venv/bin/python start_websocket_server.py
 
 # Save PM2 configuration
 pm2 save
