@@ -15,4 +15,10 @@ os.chdir(Path(__file__).parent)
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
     print(f"Starting WebSocket server on port {port}")
-    asyncio.run(start_server(port=port))
+    try:
+        asyncio.run(start_server(port=port))
+    except KeyboardInterrupt:
+        print("\n🛑 Server stopped by user")
+    except Exception as e:
+        print(f"❌ Server error: {e}")
+        raise
