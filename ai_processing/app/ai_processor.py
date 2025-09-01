@@ -5,7 +5,7 @@ class AIProcessor:
     """
     AIProcessor using Groq as the AI provider.
     """
-    def __init__(self, model: str = "llama3-8b-8192"):
+    def __init__(self, model: str = "llama-3.1-8b-instant"):
         self.model = model
         self.api_key = os.getenv('GROQ_API_KEY')
         self.client = groq.Groq(api_key=self.api_key)
