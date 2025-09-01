@@ -7,11 +7,8 @@ set -e
 
 echo "⚙️  Setting up PM2 processes..."
 
-# Navigate to project root
-cd ~/scrumy
-
 # Navigate to ai_processing directory
-cd ai_processing
+cd ~/scrumy/ai_processing
 
 # Start PM2 processes using direct commands (proven to work)
 echo "🚀 Starting PM2 processes..."
