@@ -617,3 +617,57 @@ async def websocket_endpoint(websocket: WebSocket):
 def get_websocket_manager():
     """Get the global WebSocket manager instance"""
     return websocket_manager
+
+async def start_server(host="0.0.0.0", port=8080):
+    """Start the WebSocket server with FastAPI/Uvicorn"""
+    import uvicorn
+    from fastapi import FastAPI
+    from fastapi.middleware.cors import CORSMiddleware
+    
+    # Load environment
+    import os
+    from dotenv import load_dotenv
+    
+    # Load .env file
+    env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
+    if os.path.exists(env_path):
+        load_dotenv(env_path)
+        print("✅ Loaded environment from .env")
+    else:
+        print("⚠️  No .env file found")
+    
+    print("🚀 Starting ScrumBot WebSocket Server...")
+    print(f"📡 WebSocket endpoint: ws://{host}:{port}/ws")
+    print(f"🏥 Health check: http://{host}:{port}/health")
+    
+    # Create FastAPI app
+    app = FastAPI(title="ScrumBot WebSocket Server")
+    
+    # Add CORS middleware
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    
+    # Health check endpoint
+    @app.get("/health")
+    async def health_check():
+        return {"status": "healthy"}
+    
+    # WebSocket endpoint
+    @app.websocket("/ws")
+    async def websocket_route(websocket):
+        await websocket_endpoint(websocket)
+    
+    # Start server
+    config = uvicorn.Config(
+        app=app,
+        host=host,
+        port=port,
+        log_level="info"
+    )
+    server = uvicorn.Server(config)
+    await server.serve()
