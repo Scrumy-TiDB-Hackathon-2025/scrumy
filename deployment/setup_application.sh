@@ -27,16 +27,18 @@ pip install -r requirements.txt
 # Verify key dependencies
 python -c "import fastapi, websockets; print('Dependencies OK')"
 
-# Build Whisper.cpp
-echo "🎤 Building Whisper.cpp..."
-chmod +x build_whisper.sh
-./build_whisper.sh
 
-# Verify Whisper build
-if [ -f "whisper.cpp/build/bin/whisper-cli" ]; then
-    echo "✅ Whisper.cpp built successfully"
+
+# Build Whisper.cpp (CLI only - we don't need server)
+echo "🎤 Building Whisper.cpp..."
+chmod +x build_whisper_cli_only.sh
+./build_whisper_cli_only.sh
+
+# Verify Whisper CLI build
+if [ -f "whisper.cpp/whisper-cli" ]; then
+    echo "✅ Whisper CLI built successfully"
 else
-    echo "❌ Whisper.cpp build failed"
+    echo "❌ Whisper CLI build failed"
     exit 1
 fi
 
