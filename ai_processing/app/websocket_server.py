@@ -14,6 +14,7 @@ from datetime import datetime
 import wave
 import numpy as np
 from fastapi import WebSocket, WebSocketDisconnect
+from fastapi.websockets import WebSocketState
 from app.ai_processor import AIProcessor
 from app.speaker_identifier import SpeakerIdentifier
 from app.meeting_summarizer import MeetingSummarizer
@@ -696,6 +697,10 @@ async def start_server(host="0.0.0.0", port=8080):
             while True:
                 try:
                     data = await websocket.receive_text()
+                    if not data or data.strip() == "":
+                        print(f"⚠️  Received empty message, skipping...")
+                        continue
+                        
                     message = json.loads(data)
                     print(f"📬 Received: {message}")
                     
@@ -704,8 +709,16 @@ async def start_server(host="0.0.0.0", port=8080):
                         "type": "ECHO",
                         "data": message
                     }
-                    await websocket.send_text(json.dumps(response))
-                    print(f"📤 Sent: {response}")
+                    response_json = json.dumps(response)
+                    await websocket.send_text(response_json)
+                    print(f"📤 Sent: {response_json}")
+                    
+                except json.JSONDecodeError as e:
+                    print(f"❌ JSON decode error: {e} - Data: '{data}'")
+                    await websocket.send_text(json.dumps({
+                        "type": "ERROR",
+                        "message": "Invalid JSON format"
+                    }))
                 except Exception as e:
                     print(f"❌ Message handling error: {e}")
                     break
