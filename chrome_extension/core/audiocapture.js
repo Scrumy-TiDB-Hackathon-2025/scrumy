@@ -145,8 +145,8 @@ class AudioCapture {
         }
       });
 
-      // Also send to REST API as fallback
-      this.sendToRestAPI(audioData);
+      // Send via WebSocket if available
+      this.sendViaWebSocket(audioData, participants, participantCount);
     }
 
     sendToRestAPI(audioData) {
@@ -222,34 +222,79 @@ class AudioCapture {
       }, 200 + Math.random() * 300); // 200-500ms delay
     }
 
-    handleTranscriptionResult(data) {
-      // Display transcription in the UI or send to backend for storage
-      const transcriptData = {
-        meeting_title: `Meeting - ${Date.now()}`,
-        transcripts: [{
-          id: `transcript-${Date.now()}`,
-          text: data.text,
-          timestamp: new Date().toISOString(),
-          confidence: data.confidence || 0.95
-        }]
+    sendViaWebSocket(audioData, participants, participantCount) {
+      if (!window.websocket || window.websocket.readyState !== WebSocket.OPEN) {
+        console.log('[AudioCapture] WebSocket not available, initializing...');
+        this.initializeWebSocket();
+        return;
+      }
+      
+      const message = {
+        type: 'AUDIO_CHUNK_ENHANCED',
+        data: audioData,
+        timestamp: Date.now(),
+        platform: window.meetingDetector?.platform || 'unknown',
+        meetingUrl: window.location.href,
+        participants: participants,
+        participant_count: participantCount,
+        metadata: {
+          chunk_size: audioData.length,
+          sample_rate: 16000,
+          channels: 1,
+          format: 'webm'
+        }
       };
+      
+      window.websocket.send(JSON.stringify(message));
+      console.log('[AudioCapture] Audio chunk sent via WebSocket');
+    }
+    
+    initializeWebSocket() {
+      if (window.websocket && window.websocket.readyState === WebSocket.OPEN) {
+        return;
+      }
+      
+      const wsUrl = window.SCRUMBOT_CONFIG?.WEBSOCKET_URL;
+      if (!wsUrl) {
+        console.error('[AudioCapture] No WebSocket URL configured');
+        return;
+      }
+      
+      console.log('[AudioCapture] Connecting to WebSocket:', wsUrl);
+      
+      window.websocket = new WebSocket(wsUrl);
+      
+      window.websocket.onopen = () => {
+        console.log('[AudioCapture] WebSocket connected');
+      };
+      
+      window.websocket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'transcription_result') {
+            this.handleTranscriptionResult(data.data);
+          }
+        } catch (error) {
+          console.error('[AudioCapture] WebSocket message parse error:', error);
+        }
+      };
+      
+      window.websocket.onerror = (error) => {
+        console.error('[AudioCapture] WebSocket error:', error);
+      };
+      
+      window.websocket.onclose = () => {
+        console.log('[AudioCapture] WebSocket disconnected');
+        setTimeout(() => this.initializeWebSocket(), 5000);
+      };
+    }
 
-      // Save to backend
-      fetch(`${window.SCRUMBOT_CONFIG.BACKEND_URL}${window.SCRUMBOT_CONFIG.ENDPOINTS.saveTranscript}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true'
-        },
-        body: JSON.stringify(transcriptData)
-      })
-      .then(response => response.json())
-      .then(result => {
-        console.log('[ScrumBot] Transcript saved:', result);
-      })
-      .catch(error => {
-        console.error('[ScrumBot] Failed to save transcript:', error);
-      });
+    handleTranscriptionResult(data) {
+      console.log('[AudioCapture] Transcription result:', data);
+      // Dispatch event for UI updates
+      window.dispatchEvent(new CustomEvent('scrumbot-transcription', {
+        detail: data
+      }));
     }
   
     stopCapture() {
