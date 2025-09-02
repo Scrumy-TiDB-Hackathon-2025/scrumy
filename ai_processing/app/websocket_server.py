@@ -700,10 +700,12 @@ async def start_server(host="0.0.0.0", port=8080):
                     print(f"📬 Received: {message}")
                     
                     # Echo back for testing
-                    await websocket.send_text(json.dumps({
+                    response = {
                         "type": "ECHO",
                         "data": message
-                    }))
+                    }
+                    await websocket.send_text(json.dumps(response))
+                    print(f"📤 Sent: {response}")
                 except Exception as e:
                     print(f"❌ Message handling error: {e}")
                     break
