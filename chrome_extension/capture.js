@@ -68,13 +68,7 @@ class CaptureHelper {
     this.captureBtn.textContent = '✅ Recording Active';
     
     // Send meeting start signal via WebSocket
-    if (window.scrumBotWebSocket && window.scrumBotWebSocket.isConnected) {
-      window.scrumBotWebSocket.sendMeetingEvent('started', {
-        meetingUrl: window.location.href,
-        participants: [{ id: 'user1', name: 'Meeting Participant' }]
-      });
-      console.log('[CaptureHelper] 🔄 Meeting start signal sent via WebSocket');
-    }
+    this.sendMeetingStartSignal();
     
     // Notify the meeting tab that capture started
     this.notifyMeetingTab('CAPTURE_STARTED', {
@@ -157,14 +151,7 @@ class CaptureHelper {
   stopCapture() {
     if (this.audioCapture && this.isCapturing) {
       // Send meeting end signal via WebSocket
-      if (window.scrumBotWebSocket && window.scrumBotWebSocket.isConnected) {
-        window.scrumBotWebSocket.sendMeetingEvent('ended', {
-          meetingUrl: window.location.href,
-          participants: [{ id: 'user1', name: 'Meeting Participant' }],
-          duration: Date.now() - (this.recordingStartTime || Date.now())
-        });
-        console.log('[CaptureHelper] 🔄 Meeting end signal sent via WebSocket');
-      }
+      this.sendMeetingEndSignal();
       
       this.audioCapture.stopCapture();
       this.isCapturing = false;
@@ -189,6 +176,76 @@ class CaptureHelper {
     this.statusDiv.style.display = 'block';
     
     console.log(`[CaptureHelper] ${type.toUpperCase()}: ${message}`);
+  }
+
+  // WebSocket methods for meeting signals
+  initializeWebSocket() {
+    if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+      return;
+    }
+    
+    const wsUrl = window.SCRUMBOT_CONFIG?.WEBSOCKET_URL;
+    if (!wsUrl) {
+      console.log('[CaptureHelper] No WebSocket URL configured');
+      return;
+    }
+    
+    console.log('[CaptureHelper] 🔌 Connecting to WebSocket:', wsUrl);
+    
+    this.websocket = new WebSocket(wsUrl);
+    
+    this.websocket.onopen = () => {
+      console.log('[CaptureHelper] ✅ WebSocket connected');
+    };
+    
+    this.websocket.onerror = (error) => {
+      console.error('[CaptureHelper] ❌ WebSocket error:', error);
+    };
+    
+    this.websocket.onclose = () => {
+      console.log('[CaptureHelper] 🔌 WebSocket disconnected');
+    };
+  }
+  
+  sendMeetingStartSignal() {
+    this.initializeWebSocket();
+    
+    if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+      const message = {
+        type: 'MEETING_EVENT',
+        eventType: 'started',
+        data: {
+          meetingUrl: window.location.href,
+          participants: [{ id: 'user1', name: 'Meeting Participant' }],
+          timestamp: new Date().toISOString()
+        }
+      };
+      
+      this.websocket.send(JSON.stringify(message));
+      console.log('[CaptureHelper] 🔄 Meeting start signal sent via WebSocket');
+    } else {
+      console.log('[CaptureHelper] ⚠️ WebSocket not connected, cannot send meeting start signal');
+    }
+  }
+  
+  sendMeetingEndSignal() {
+    if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+      const message = {
+        type: 'MEETING_EVENT',
+        eventType: 'ended',
+        data: {
+          meetingUrl: window.location.href,
+          participants: [{ id: 'user1', name: 'Meeting Participant' }],
+          duration: Date.now() - (this.recordingStartTime || Date.now()),
+          timestamp: new Date().toISOString()
+        }
+      };
+      
+      this.websocket.send(JSON.stringify(message));
+      console.log('[CaptureHelper] 🔄 Meeting end signal sent via WebSocket');
+    } else {
+      console.log('[CaptureHelper] ⚠️ WebSocket not connected, cannot send meeting end signal');
+    }
   }
 
   // Validate that the selected tab is actually a meeting

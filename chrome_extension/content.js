@@ -372,16 +372,8 @@ function stopEnhancedRecording() {
     window.meetingDetector.stopParticipantMonitoring();
   }
   
-  // Send meeting end signal via WebSocket if available
-  if (window.scrumBotWebSocket && window.scrumBotWebSocket.isConnected) {
-    const participants = window.meetingDetector?.getParticipants() || [];
-    window.scrumBotWebSocket.sendMeetingEvent('ended', {
-      meetingUrl: window.location.href,
-      participants: participants,
-      platform: currentPlatform
-    });
-    console.log('🔄 Meeting end signal sent via WebSocket from content script');
-  }
+  // Send meeting end signal via WebSocket
+  sendMeetingEndSignal();
   
   // Use the proven multi-tab stop approach
   if (helperTabId) {
@@ -708,6 +700,92 @@ function debugComponents() {
 }
 
 
+
+// WebSocket connection for real-time communication
+let websocket = null;
+
+function initializeWebSocket() {
+  if (websocket && websocket.readyState === WebSocket.OPEN) {
+    return;
+  }
+  
+  const wsUrl = config.WEBSOCKET_URL;
+  console.log('🔌 Connecting to WebSocket:', wsUrl);
+  
+  websocket = new WebSocket(wsUrl);
+  
+  websocket.onopen = () => {
+    console.log('✅ WebSocket connected');
+  };
+  
+  websocket.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      console.log('📨 WebSocket message:', data);
+      
+      // Handle different message types
+      if (data.type === 'transcription') {
+        handleTranscriptionUpdate(data);
+      } else if (data.type === 'meeting_processed') {
+        handleMeetingProcessed(data);
+      }
+    } catch (error) {
+      console.error('❌ WebSocket message parse error:', error);
+    }
+  };
+  
+  websocket.onerror = (error) => {
+    console.error('❌ WebSocket error:', error);
+  };
+  
+  websocket.onclose = () => {
+    console.log('🔌 WebSocket disconnected');
+    // Reconnect after 5 seconds
+    setTimeout(initializeWebSocket, 5000);
+  };
+}
+
+function sendMeetingEndSignal() {
+  if (websocket && websocket.readyState === WebSocket.OPEN) {
+    const participants = window.meetingDetector?.getParticipants() || [];
+    const message = {
+      type: 'MEETING_EVENT',
+      eventType: 'ended',
+      data: {
+        meetingId: meetingId,
+        meetingUrl: window.location.href,
+        participants: participants,
+        platform: currentPlatform,
+        timestamp: new Date().toISOString()
+      }
+    };
+    
+    websocket.send(JSON.stringify(message));
+    console.log('🔄 Meeting end signal sent via WebSocket from content script');
+  } else {
+    console.log('⚠️ WebSocket not connected, cannot send meeting end signal');
+  }
+}
+
+function handleTranscriptionUpdate(data) {
+  // Update UI with new transcription
+  if (window.scrumBotUI) {
+    window.scrumBotUI.addTranscript(data.transcript);
+  }
+}
+
+function handleMeetingProcessed(data) {
+  console.log('✅ Meeting processed:', data);
+  // Update UI with processing results
+  if (window.scrumBotUI) {
+    window.scrumBotUI.updateMeetingAnalysis(data.analysis);
+  }
+}
+
+// Initialize WebSocket when content script loads
+if (currentPlatform) {
+  initializeWebSocket();
+}
 
 // Auto-refresh connection status
 setInterval(() => {
