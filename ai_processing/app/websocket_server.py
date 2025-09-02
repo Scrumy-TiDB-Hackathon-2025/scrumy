@@ -24,6 +24,7 @@ from app.meeting_buffer import MeetingBuffer, TranscriptChunk, BatchProcessor
 from app.audio_buffer import AudioBufferManager, SessionAudioBuffer
 from app.pipeline_logger import PipelineLogger
 import subprocess
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -297,12 +298,21 @@ class WebSocketManager:
     
     async def _timeout_checker_loop(self):
         """Background loop to check for timeout-based buffer processing"""
+        print(f"🔄 Background timeout checker started")
         while True:
             try:
                 await asyncio.sleep(1.0)  # Check every second
                 
+                # Debug: show checker is running
+                if len(self.audio_buffer_manager.buffers) > 0:
+                    print(f"🔍 Checking {len(self.audio_buffer_manager.buffers)} buffers for timeout...")
+                
                 # Check all buffers for timeout
                 for session_id, buffer in list(self.audio_buffer_manager.buffers.items()):
+                    duration = buffer.get_duration_ms()
+                    time_since_flush = time.time() - buffer.last_flush if buffer.last_flush else 0
+                    print(f"   Session {session_id}: {duration:.1f}ms, {time_since_flush:.1f}s since flush")
+                    
                     if buffer.should_process() and len(buffer.buffer) > 0:
                         print(f"⏰ Timeout-based processing triggered for session {session_id}")
                         await self._process_timeout_buffer(session_id, buffer)
