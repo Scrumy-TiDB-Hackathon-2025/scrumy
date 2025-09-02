@@ -578,7 +578,7 @@ class WebSocketManager:
 websocket_manager = WebSocketManager()
 
 async def websocket_endpoint(websocket: WebSocket):
-    """Main WebSocket endpoint handler"""
+    """Main WebSocket endpoint handler with full message routing"""
     print(f"🔌 Starting WebSocket endpoint handler")
     
     client_info = {
@@ -587,45 +587,56 @@ async def websocket_endpoint(websocket: WebSocket):
     }
     
     print(f"🔌 Client info: {client_info}")
-    print(f"🔌 Attempting to connect WebSocket...")
     
     try:
+        # Connect using WebSocketManager (sends HANDSHAKE_ACK automatically)
         await websocket_manager.connect(websocket, client_info)
         print(f"✅ WebSocket connected successfully")
-    except Exception as e:
-        print(f"❌ WebSocket connect failed: {e}")
-        raise
 
-    try:
         while True:
-            # Receive message from client
-            data = await websocket.receive_text()
-            message = json.loads(data)
+            try:
+                # Receive message from client
+                data = await websocket.receive_text()
+                
+                if not data or data.strip() == "":
+                    print(f"⚠️  Received empty message, skipping...")
+                    continue
+                    
+                message = json.loads(data)
+                message_type = message.get('type')
+                print(f"📬 Received {message_type}: {message}")
 
-            message_type = message.get('type')
-            logger.debug(f"Received message type: {message_type}")
-
-            # Route message based on type - support both formats
-            if message_type == 'HANDSHAKE':
-                await websocket_manager.handle_handshake(websocket, message)
-            elif message_type in ['AUDIO_CHUNK', 'audio_chunk', 'AUDIO_CHUNK_ENHANCED']:
-                await websocket_manager.handle_audio_chunk(websocket, message)
-            elif message_type == 'MEETING_EVENT':
-                await websocket_manager.handle_meeting_event(websocket, message)
-            else:
-                logger.warning(f"Unknown message type: {message_type}")
+                # Route message based on type
+                if message_type == 'HANDSHAKE':
+                    await websocket_manager.handle_handshake(websocket, message)
+                elif message_type in ['AUDIO_CHUNK', 'audio_chunk', 'AUDIO_CHUNK_ENHANCED']:
+                    await websocket_manager.handle_audio_chunk(websocket, message)
+                elif message_type == 'MEETING_EVENT':
+                    await websocket_manager.handle_meeting_event(websocket, message)
+                else:
+                    print(f"⚠️  Unknown message type: {message_type}")
+                    await websocket_manager.send_message(websocket, {
+                        'type': 'ERROR',
+                        'error': f"Unknown message type: {message_type}"
+                    })
+                    
+            except json.JSONDecodeError as e:
+                print(f"❌ JSON decode error: {e} - Data: '{data}'")
                 await websocket_manager.send_message(websocket, {
                     'type': 'ERROR',
-                    'error': f"Unknown message type: {message_type}"
+                    'error': 'Invalid JSON format'
                 })
+            except Exception as e:
+                print(f"❌ Message handling error: {e}")
+                break
 
     except WebSocketDisconnect:
         print(f"🔌 WebSocket disconnected normally")
         websocket_manager.disconnect(websocket)
     except Exception as e:
-        print(f"❌ WebSocket error in main loop: {e}")
-        logger.error(f"WebSocket error: {e}")
+        print(f"❌ WebSocket error: {e}")
         websocket_manager.disconnect(websocket)
+        raise
 
 def get_websocket_manager():
     """Get the global WebSocket manager instance"""
@@ -676,74 +687,11 @@ async def start_server(host="0.0.0.0", port=8080):
     async def health_check():
         return {"status": "healthy"}
     
-    # WebSocket endpoint with explicit accept
+    # WebSocket endpoint with full message handling
     @app.websocket("/ws")
     async def websocket_route(websocket: WebSocket):
         print(f"🔌 WebSocket connection attempt from {websocket.client}")
-        print(f"🔌 WebSocket headers: {websocket.headers}")
-        
-        # Accept connection immediately
-        try:
-            await websocket.accept()
-            print(f"✅ WebSocket accepted")
-            
-            # Send welcome message
-            await websocket.send_text(json.dumps({
-                "type": "WELCOME",
-                "message": "Connected to ScrumBot WebSocket"
-            }))
-            
-            # Keep connection alive
-            while True:
-                try:
-                    data = await websocket.receive_text()
-                    if not data or data.strip() == "":
-                        print(f"⚠️  Received empty message, skipping...")
-                        continue
-                        
-                    message = json.loads(data)
-                    print(f"📬 Received: {message}")
-                    
-                    # Handle different message types
-                    message_type = message.get('type')
-                    
-                    if message_type == 'HANDSHAKE':
-                        # Proper handshake acknowledgment
-                        response = {
-                            "type": "HANDSHAKE_ACK",
-                            "serverVersion": "1.0",
-                            "status": "ready",
-                            "supportedFeatures": [
-                                "audio-transcription",
-                                "speaker-identification",
-                                "real-time-processing"
-                            ],
-                            "timestamp": datetime.now().isoformat()
-                        }
-                    else:
-                        # Echo back other messages for testing
-                        response = {
-                            "type": "ECHO",
-                            "data": message
-                        }
-                    
-                    response_json = json.dumps(response)
-                    await websocket.send_text(response_json)
-                    print(f"📤 Sent: {response_json}")
-                    
-                except json.JSONDecodeError as e:
-                    print(f"❌ JSON decode error: {e} - Data: '{data}'")
-                    await websocket.send_text(json.dumps({
-                        "type": "ERROR",
-                        "message": "Invalid JSON format"
-                    }))
-                except Exception as e:
-                    print(f"❌ Message handling error: {e}")
-                    break
-                    
-        except Exception as e:
-            print(f"❌ WebSocket error: {e}")
-            raise
+        await websocket_endpoint(websocket)
     
     # Start server
     config = uvicorn.Config(
