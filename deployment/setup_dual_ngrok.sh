@@ -45,7 +45,7 @@ setup_ngrok_config() {
         cat > "$config_file" << EOF
 version: "2"
 authtoken: $token
-web_addr: localhost:404$([[ "$account_name" == "Account 1" ]] && echo "0" || echo "1")
+web_addr: localhost:404$([[ "$account_name" == "Account 1" ]] && echo "0" || echo "2")
 EOF
         
         echo "✅ Created config for $account_name"
@@ -77,7 +77,7 @@ sleep 8
 # Extract URLs from different web interfaces
 echo "📋 Extracting tunnel URLs..."
 API_URL=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url' 2>/dev/null || echo "")
-WS_URL=$(curl -s http://localhost:4041/api/tunnels | jq -r '.tunnels[0].public_url' 2>/dev/null || echo "")
+WS_URL=$(curl -s http://localhost:4042/api/tunnels | jq -r '.tunnels[0].public_url' 2>/dev/null || echo "")
 
 # Fallback: extract from logs if API fails
 if [ -z "$API_URL" ]; then
@@ -104,7 +104,7 @@ echo "  curl $WS_URL/health               # WebSocket health"
 echo ""
 echo "🌐 Web interfaces:"
 echo "  Account 1: http://localhost:4040  # REST API tunnel"
-echo "  Account 2: http://localhost:4041  # WebSocket tunnel"
+echo "  Account 2: http://localhost:4042  # WebSocket tunnel"
 echo ""
 echo "🛑 To stop tunnels:"
 echo "  kill $NGROK_PID_1 $NGROK_PID_2"

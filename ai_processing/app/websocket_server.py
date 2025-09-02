@@ -578,12 +578,22 @@ websocket_manager = WebSocketManager()
 
 async def websocket_endpoint(websocket: WebSocket):
     """Main WebSocket endpoint handler"""
+    print(f"🔌 Starting WebSocket endpoint handler")
+    
     client_info = {
         'client_host': websocket.client.host if websocket.client else 'unknown',
         'client_port': websocket.client.port if websocket.client else 0
     }
-
-    await websocket_manager.connect(websocket, client_info)
+    
+    print(f"🔌 Client info: {client_info}")
+    print(f"🔌 Attempting to connect WebSocket...")
+    
+    try:
+        await websocket_manager.connect(websocket, client_info)
+        print(f"✅ WebSocket connected successfully")
+    except Exception as e:
+        print(f"❌ WebSocket connect failed: {e}")
+        raise
 
     try:
         while True:
@@ -609,8 +619,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 })
 
     except WebSocketDisconnect:
+        print(f"🔌 WebSocket disconnected normally")
         websocket_manager.disconnect(websocket)
     except Exception as e:
+        print(f"❌ WebSocket error in main loop: {e}")
         logger.error(f"WebSocket error: {e}")
         websocket_manager.disconnect(websocket)
 
@@ -643,24 +655,62 @@ async def start_server(host="0.0.0.0", port=8080):
     # Create FastAPI app
     app = FastAPI(title="ScrumBot WebSocket Server")
     
-    # Add CORS middleware
+    # Add CORS middleware with WebSocket support
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["*"]
     )
+    
+    # Add root endpoint for testing
+    @app.get("/")
+    async def root():
+        return {"message": "ScrumBot WebSocket Server", "websocket": "/ws"}
     
     # Health check endpoint
     @app.get("/health")
     async def health_check():
         return {"status": "healthy"}
     
-    # WebSocket endpoint
+    # WebSocket endpoint with explicit accept
     @app.websocket("/ws")
-    async def websocket_route(websocket):
-        await websocket_endpoint(websocket)
+    async def websocket_route(websocket: WebSocket):
+        print(f"🔌 WebSocket connection attempt from {websocket.client}")
+        print(f"🔌 WebSocket headers: {websocket.headers}")
+        
+        # Accept connection immediately
+        try:
+            await websocket.accept()
+            print(f"✅ WebSocket accepted")
+            
+            # Send welcome message
+            await websocket.send_text(json.dumps({
+                "type": "WELCOME",
+                "message": "Connected to ScrumBot WebSocket"
+            }))
+            
+            # Keep connection alive
+            while True:
+                try:
+                    data = await websocket.receive_text()
+                    message = json.loads(data)
+                    print(f"📬 Received: {message}")
+                    
+                    # Echo back for testing
+                    await websocket.send_text(json.dumps({
+                        "type": "ECHO",
+                        "data": message
+                    }))
+                except Exception as e:
+                    print(f"❌ Message handling error: {e}")
+                    break
+                    
+        except Exception as e:
+            print(f"❌ WebSocket error: {e}")
+            raise
     
     # Start server
     config = uvicorn.Config(
