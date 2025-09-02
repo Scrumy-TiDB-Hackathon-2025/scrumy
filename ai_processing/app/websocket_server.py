@@ -492,26 +492,40 @@ class WebSocketManager:
                 'eventType': event_type,
                 'status': 'acknowledged'
             })
-        elif event_type == 'meeting_ended':
+        elif event_type in ['ended', 'meeting_ended']:
+            print(f"\n🏁 Meeting ended - starting final processing...")
             # Process final summary if we have a session
             connection_info = self.active_connections.get(websocket)
             if connection_info and connection_info.get('meeting_session'):
                 session = connection_info['meeting_session']
+                print(f"📋 Processing meeting: {session.meeting_id}")
+                print(f"👥 Participants: {', '.join(session.participants)}")
                 await self._generate_meeting_summary(websocket, session)
+            else:
+                print(f"⚠️ No active meeting session found")
+            print(f"✅ Meeting end processing completed!")
 
     async def _generate_meeting_summary(self, websocket: WebSocket, session: MeetingSession):
         """Generate and send meeting summary (only if AI is available)"""
         try:
+            print(f"🎯 Starting meeting summary generation for {session.meeting_id}")
+            
             if not session.cumulative_transcript.strip():
+                print(f"⚠️ No transcript content available - skipping summary")
                 logger.warning("No transcript available for summary")
                 return
+
+            print(f"📝 Transcript ready: {len(session.cumulative_transcript)} characters")
 
             # Try to generate AI summary and tasks (may fail if no API key)
             summary = {}
             tasks = {}
             
             try:
+                print(f"🤖 Starting AI processing...")
+                
                 # Generate comprehensive summary
+                print(f"📋 Generating meeting summary...")
                 summary = await session.meeting_summarizer.generate_comprehensive_summary(
                     session.cumulative_transcript,
                     {
@@ -521,16 +535,23 @@ class WebSocketManager:
                         'duration': str(datetime.now() - session.start_time)
                     }
                 )
+                print(f"✅ Summary generated: {len(summary.get('summary', ''))} characters")
 
                 # Extract tasks
+                print(f"📋 Extracting action items and tasks...")
                 tasks = await session.task_extractor.extract_comprehensive_tasks(
                     session.cumulative_transcript,
                     {'participants': list(session.participants)}
                 )
+                task_count = len(tasks.get('tasks', []))
+                print(f"✅ Tasks extracted: {task_count} action items found")
                 
+                print(f"🎉 AI processing completed successfully!")
                 logger.info(f"AI processing completed for meeting {session.meeting_id}")
                 
             except Exception as ai_error:
+                print(f"⚠️ AI processing failed: {str(ai_error)}")
+                print(f"📝 Creating basic summary without AI...")
                 logger.warning(f"AI processing failed (continuing without AI): {ai_error}")
                 # Create basic summary without AI
                 summary = {
@@ -539,10 +560,15 @@ class WebSocketManager:
                     'participants': list(session.participants)
                 }
                 tasks = {'tasks': []}
+                print(f"✅ Basic summary created")
 
             # Notify integration systems (only if tasks were extracted)
-            if tasks.get('tasks'):
+            task_count = len(tasks.get('tasks', []))
+            if task_count > 0:
                 try:
+                    print(f"\n🔗 Starting integration processing...")
+                    print(f"📋 Creating {task_count} tasks in external systems...")
+                    
                     participant_objects = session.get_participant_data_objects()
                     
                     # Add pipeline logger to meeting context for integration logging
@@ -567,10 +593,15 @@ class WebSocketManager:
                         meeting_context=meeting_context_with_logger
                     )
                     
+                    print(f"✅ Integration processing completed!")
+                    print(f"📋 Tasks created in: Notion, Slack, and other configured systems")
                     logger.info(f"Notified integration systems for meeting {session.meeting_id}")
                     
                 except Exception as e:
+                    print(f"❌ Integration processing failed: {str(e)}")
                     logger.warning(f"Failed to notify integration systems: {e}")
+            else:
+                print(f"ℹ️ No tasks found - skipping integration processing")
             
             # Always log pipeline summary
             try:
@@ -605,6 +636,7 @@ class WebSocketManager:
             logger.info(f"Generated meeting summary for {session.meeting_id}")
 
         except Exception as e:
+            print(f"❌ Meeting summary generation failed: {str(e)}")
             logger.error(f"Error generating meeting summary: {e}")
 
     def _get_speaker_id_from_name(self, speaker_name: str, participant_data: Dict[str, Dict]) -> Optional[str]:
