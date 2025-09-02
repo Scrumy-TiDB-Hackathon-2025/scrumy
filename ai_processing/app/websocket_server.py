@@ -114,7 +114,7 @@ class AudioProcessor:
             return ""
 
 class MeetingSession:
-    """Manage individual meeting session state"""
+    """Manage individual meeting session state with lazy AI initialization"""
 
     def __init__(self, meeting_id: str, platform: str = "unknown"):
         self.meeting_id = meeting_id
@@ -127,15 +127,49 @@ class MeetingSession:
         self.transcript_chunks: List[Dict] = []
         self.cumulative_transcript = ""
 
-        # Initialize AI processors
-        self.ai_processor = AIProcessor()
-        self.speaker_identifier = SpeakerIdentifier(self.ai_processor)
-        self.meeting_summarizer = MeetingSummarizer(self.ai_processor)
-        self.task_extractor = TaskExtractor(self.ai_processor)
-        
-        # Initialize optimized buffer system
+        # Initialize buffer system immediately (no AI dependency)
         self.buffer = MeetingBuffer(meeting_id)
-        self.batch_processor = BatchProcessor(self.ai_processor)
+        
+        # Lazy AI initialization - only created when needed
+        self._ai_processor = None
+        self._speaker_identifier = None
+        self._meeting_summarizer = None
+        self._task_extractor = None
+        self._batch_processor = None
+    
+    def _ensure_ai_components(self):
+        """Lazy initialization of AI components"""
+        if self._ai_processor is None:
+            self._ai_processor = AIProcessor()
+            self._speaker_identifier = SpeakerIdentifier(self._ai_processor)
+            self._meeting_summarizer = MeetingSummarizer(self._ai_processor)
+            self._task_extractor = TaskExtractor(self._ai_processor)
+            self._batch_processor = BatchProcessor(self._ai_processor)
+    
+    @property
+    def ai_processor(self):
+        self._ensure_ai_components()
+        return self._ai_processor
+    
+    @property
+    def speaker_identifier(self):
+        self._ensure_ai_components()
+        return self._speaker_identifier
+    
+    @property
+    def meeting_summarizer(self):
+        self._ensure_ai_components()
+        return self._meeting_summarizer
+    
+    @property
+    def task_extractor(self):
+        self._ensure_ai_components()
+        return self._task_extractor
+    
+    @property
+    def batch_processor(self):
+        self._ensure_ai_components()
+        return self._batch_processor
 
     def add_transcript_chunk(self, chunk: Dict):
         """Add transcription chunk to session"""
@@ -363,7 +397,7 @@ class WebSocketManager:
             # Add to session
             session.add_transcript_chunk(transcription_result)
 
-            # Add to buffer instead of immediate AI processing
+            # Add to buffer (no immediate AI processing)
             if transcription_result.get('text'):
                 # Create transcript chunk for buffer
                 chunk = TranscriptChunk(
@@ -378,12 +412,16 @@ class WebSocketManager:
                 # Add to buffer (no AI call yet)
                 session.buffer.add_chunk(chunk)
                 
-                # Check if we should process batch
+                # Check if we should process batch (only if AI is available)
                 if session.buffer.should_process_batch():
-                    logger.info(f"Triggering batch processing for meeting {meeting_id}")
-                    session.batch_processor.start_batch_processing(session.buffer)
+                    try:
+                        logger.info(f"Triggering batch processing for meeting {meeting_id}")
+                        session.batch_processor.start_batch_processing(session.buffer)
+                    except Exception as e:
+                        logger.warning(f"Batch processing failed (AI unavailable): {e}")
+                        # Continue without AI processing
                 
-                # Use fallback speaker identification for immediate response
+                # Use fallback speaker identification for immediate response (no AI)
                 speaker_name = session.buffer._fallback_speaker_identification(chunk)
                 transcription_result['speakers'] = [{'name': speaker_name}] if speaker_name != 'Unknown' else []
 
@@ -443,9 +481,11 @@ class WebSocketManager:
 
         except Exception as e:
             logger.error(f"Error handling audio chunk: {e}")
+            # Send error but continue processing
             await self.send_message(websocket, {
                 'type': 'ERROR',
-                'error': f"Audio processing failed: {str(e)}"
+                'error': f"Audio processing failed: {str(e)}",
+                'recoverable': True
             })
 
     async def handle_meeting_event(self, websocket: WebSocket, message: Dict):
@@ -470,56 +510,80 @@ class WebSocketManager:
                 await self._generate_meeting_summary(websocket, session)
 
     async def _generate_meeting_summary(self, websocket: WebSocket, session: MeetingSession):
-        """Generate and send meeting summary"""
+        """Generate and send meeting summary (only if AI is available)"""
         try:
             if not session.cumulative_transcript.strip():
                 logger.warning("No transcript available for summary")
                 return
 
-            # Generate comprehensive summary
-            summary = await session.meeting_summarizer.generate_comprehensive_summary(
-                session.cumulative_transcript,
-                {
-                    'meeting_id': session.meeting_id,
-                    'platform': session.platform,
-                    'participants': list(session.participants),
-                    'duration': str(datetime.now() - session.start_time)
-                }
-            )
-
-            # Extract tasks
-            tasks = await session.task_extractor.extract_comprehensive_tasks(
-                session.cumulative_transcript,
-                {'participants': list(session.participants)}
-            )
-
-            # Notify integration systems with proper participant data and logging
+            # Try to generate AI summary and tasks (may fail if no API key)
+            summary = {}
+            tasks = {}
+            
             try:
-                participant_objects = session.get_participant_data_objects()
-                
-                # Add pipeline logger to meeting context for integration logging
-                meeting_context_with_logger = {
-                    'meeting_id': session.meeting_id,
-                    'platform': session.platform,
-                    'participants': list(session.participants),
-                    'summary': summary,
-                    'pipeline_logger': session.buffer.logger
-                }
-                
-                await notify_meeting_processed(
-                    meeting_id=session.meeting_id,
-                    meeting_title=f"Meeting {session.meeting_id}",
-                    platform=session.platform,
-                    participants=participant_objects,
-                    participant_count=session.participant_count,
-                    transcript=session.cumulative_transcript,
-                    summary_data=summary,
-                    tasks_data=tasks,
-                    speakers_data=[],
-                    meeting_context=meeting_context_with_logger
+                # Generate comprehensive summary
+                summary = await session.meeting_summarizer.generate_comprehensive_summary(
+                    session.cumulative_transcript,
+                    {
+                        'meeting_id': session.meeting_id,
+                        'platform': session.platform,
+                        'participants': list(session.participants),
+                        'duration': str(datetime.now() - session.start_time)
+                    }
+                )
+
+                # Extract tasks
+                tasks = await session.task_extractor.extract_comprehensive_tasks(
+                    session.cumulative_transcript,
+                    {'participants': list(session.participants)}
                 )
                 
-                # Log pipeline summary
+                logger.info(f"AI processing completed for meeting {session.meeting_id}")
+                
+            except Exception as ai_error:
+                logger.warning(f"AI processing failed (continuing without AI): {ai_error}")
+                # Create basic summary without AI
+                summary = {
+                    'summary': f"Meeting transcript with {len(session.transcript_chunks)} segments",
+                    'key_points': ['Transcript available for review'],
+                    'participants': list(session.participants)
+                }
+                tasks = {'tasks': []}
+
+            # Notify integration systems (only if tasks were extracted)
+            if tasks.get('tasks'):
+                try:
+                    participant_objects = session.get_participant_data_objects()
+                    
+                    # Add pipeline logger to meeting context for integration logging
+                    meeting_context_with_logger = {
+                        'meeting_id': session.meeting_id,
+                        'platform': session.platform,
+                        'participants': list(session.participants),
+                        'summary': summary,
+                        'pipeline_logger': session.buffer.logger
+                    }
+                    
+                    await notify_meeting_processed(
+                        meeting_id=session.meeting_id,
+                        meeting_title=f"Meeting {session.meeting_id}",
+                        platform=session.platform,
+                        participants=participant_objects,
+                        participant_count=session.participant_count,
+                        transcript=session.cumulative_transcript,
+                        summary_data=summary,
+                        tasks_data=tasks,
+                        speakers_data=[],
+                        meeting_context=meeting_context_with_logger
+                    )
+                    
+                    logger.info(f"Notified integration systems for meeting {session.meeting_id}")
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to notify integration systems: {e}")
+            
+            # Always log pipeline summary
+            try:
                 session.buffer.logger.log_pipeline_summary({
                     "meeting_id": session.meeting_id,
                     "platform": session.platform,
@@ -527,22 +591,12 @@ class WebSocketManager:
                     "participants": list(session.participants),
                     "summary_length": len(summary.get('summary', '')),
                     "tasks_extracted": len(tasks.get('tasks', [])),
-                    "duration": str(datetime.now() - session.start_time)
+                    "duration": str(datetime.now() - session.start_time),
+                    "ai_processing": bool(tasks.get('tasks'))
                 })
-                
-                logger.info(f"Notified integration systems for meeting {session.meeting_id}")
                 logger.info(f"Pipeline logs saved to: {session.buffer.logger.get_log_directory()}")
             except Exception as e:
-                logger.warning(f"Failed to notify integration systems: {e}")
-                # Still log pipeline summary on error
-                try:
-                    session.buffer.logger.log_pipeline_summary({
-                        "meeting_id": session.meeting_id,
-                        "error": str(e),
-                        "status": "failed"
-                    })
-                except:
-                    pass
+                logger.warning(f"Failed to log pipeline summary: {e}")
 
             # Send final summary
             await self.send_message(websocket, {
