@@ -73,8 +73,12 @@ class SessionAudioBuffer:
         time_since_flush = time.time() - self.last_flush
         
         # Process if buffer is full OR timeout reached
-        buffer_full = current_samples >= self.target_samples
+        buffer_full = current_samples >= (self.target_samples * 0.98)  # 98% threshold
         timeout_reached = time_since_flush > self.timeout_seconds
+        
+        # DEBUG: Print values to see what's happening
+        if len(self.buffer) > 0:
+            print(f"DEBUG: samples={current_samples}/{self.target_samples}, time={time_since_flush:.1f}s, full={buffer_full}, timeout={timeout_reached}")
         
         if buffer_full or timeout_reached:
             duration_ms = (current_samples / self.sample_rate) * 1000
@@ -123,7 +127,7 @@ class SessionAudioBuffer:
     def clear(self):
         """Clear buffer after processing"""
         self.buffer.clear()
-        self.last_flush = time.time()
+        # Don't reset last_flush - keep original time for timeout calculation
         logger.debug(f"Audio buffer cleared for session {self.session_id}")
     
     def get_duration_ms(self) -> float:

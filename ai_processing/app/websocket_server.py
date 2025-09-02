@@ -473,32 +473,45 @@ class WebSocketManager:
             
             transcription_result = {'text': '', 'confidence': 0.0, 'timestamp': datetime.now().isoformat()}
             
+            # Calculate current samples for later use
+            bytes_per_sample = audio_buffer.sample_width * audio_buffer.channels
+            current_samples = len(audio_buffer.buffer) // bytes_per_sample
+            
             if ready_for_processing:
-                print(f"🎤 Buffer ready ({audio_buffer.get_duration_ms():.1f}ms) - processing with Whisper...")
+                # Check if this is buffer full or timeout
+                buffer_full = current_samples >= audio_buffer.target_samples
                 
-                # Create WAV file from buffered audio
-                wav_path = audio_buffer.create_wav_file()
-                if wav_path:
-                    try:
-                        # Process combined audio with Whisper
-                        transcription_result = await self.audio_processor.process_audio_chunk(
-                            audio_buffer.get_buffered_audio(), metadata
-                        )
-                        print(f"📝 Whisper result: '{transcription_result.get('text', 'EMPTY')}'")
-                        
-                        # Clean up temp file
-                        os.unlink(wav_path)
-                        
-                    except Exception as e:
-                        print(f"❌ Whisper processing failed: {e}")
-                        if os.path.exists(wav_path):
-                            os.unlink(wav_path)
+                if buffer_full:
+                    print(f"🎤 Buffer full ({audio_buffer.get_duration_ms():.1f}ms) - processing with Whisper...")
                     
-                    # Clear buffer after processing
-                    audio_buffer.clear()
+                    # Create WAV file from buffered audio
+                    wav_path = audio_buffer.create_wav_file()
+                    if wav_path:
+                        try:
+                            # Process combined audio with Whisper
+                            transcription_result = await self.audio_processor.process_audio_chunk(
+                                audio_buffer.get_buffered_audio(), metadata
+                            )
+                            print(f"📝 Whisper result: '{transcription_result.get('text', 'EMPTY')}'")
+                            
+                            # Clean up temp file
+                            os.unlink(wav_path)
+                            
+                        except Exception as e:
+                            print(f"❌ Whisper processing failed: {e}")
+                            if os.path.exists(wav_path):
+                                os.unlink(wav_path)
+                        
+                        # Clear buffer after processing
+                        audio_buffer.clear()
+                    else:
+                        print(f"❌ Failed to create WAV file from buffer")
                 else:
-                    print(f"❌ Failed to create WAV file from buffer")
-            else:
+                    # Timeout scenario - don't process here, let background task handle it
+                    print(f"⏰ Timeout ready - leaving for background task")
+                    ready_for_processing = False
+            
+            if not ready_for_processing:
                 print(f"🔄 Buffering audio chunk ({audio_buffer.get_duration_ms():.1f}ms/{audio_buffer.target_duration_ms}ms)")
             
             # Log transcript chunk (if logger available)
@@ -539,8 +552,12 @@ class WebSocketManager:
                 speaker_name = session.buffer._fallback_speaker_identification(chunk)
                 transcription_result['speakers'] = [{'name': speaker_name}] if speaker_name != 'Unknown' else []
 
-            # Only send transcription result if we actually processed audio
-            if ready_for_processing or transcription_result.get('text'):
+            # Send transcription result if we processed audio (buffer full) or have text
+            should_send_result = (ready_for_processing or 
+                                transcription_result.get('text') or 
+                                (current_samples >= audio_buffer.target_samples * 0.98))
+            
+            if should_send_result:
                 speakers = transcription_result.get('speakers', [])
                 speaker_name = speakers[0].get('name', 'Unknown') if speakers else 'Unknown'
                 
