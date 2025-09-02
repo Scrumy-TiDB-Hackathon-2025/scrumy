@@ -23,6 +23,7 @@ from app.integration_adapter import ParticipantData, notify_meeting_processed
 from app.meeting_buffer import MeetingBuffer, TranscriptChunk, BatchProcessor
 from app.audio_buffer import AudioBufferManager, SessionAudioBuffer
 from app.pipeline_logger import PipelineLogger
+from app.background_tasks import background_manager
 import subprocess
 import time
 
@@ -289,38 +290,8 @@ class WebSocketManager:
         self.audio_processor = AudioProcessor()
         self.audio_buffer_manager = AudioBufferManager()
         self.batch_processor = None  # Initialized when first session is created
-        self._timeout_task = None
         
-    async def start_timeout_checker(self):
-        """Start background task to check for timeout-based processing"""
-        if self._timeout_task is None:
-            self._timeout_task = asyncio.create_task(self._timeout_checker_loop())
-    
-    async def _timeout_checker_loop(self):
-        """Background loop to check for timeout-based buffer processing"""
-        print(f"🔄 Background timeout checker started")
-        while True:
-            try:
-                await asyncio.sleep(1.0)  # Check every second
-                
-                # Debug: show checker is running
-                if len(self.audio_buffer_manager.buffers) > 0:
-                    print(f"🔍 Checking {len(self.audio_buffer_manager.buffers)} buffers for timeout...")
-                
-                # Check all buffers for timeout
-                for session_id, buffer in list(self.audio_buffer_manager.buffers.items()):
-                    duration = buffer.get_duration_ms()
-                    time_since_flush = time.time() - buffer.last_flush if buffer.last_flush else 0
-                    print(f"   Session {session_id}: {duration:.1f}ms, {time_since_flush:.1f}s since flush")
-                    
-                    if buffer.should_process() and len(buffer.buffer) > 0:
-                        print(f"⏰ Timeout-based processing triggered for session {session_id}")
-                        await self._process_timeout_buffer(session_id, buffer)
-                        
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"Timeout checker error: {e}")
+
     
     async def _process_timeout_buffer(self, session_id: str, buffer):
         """Process buffer due to timeout"""
@@ -396,10 +367,6 @@ class WebSocketManager:
 
         self.active_connections[websocket] = connection_info
         logger.info(f"New WebSocket connection: {client_info}")
-        
-        # Start timeout checker if this is the first connection
-        if len(self.active_connections) == 1:
-            await self.start_timeout_checker()
 
         # Send handshake acknowledgment
         await self.send_message(websocket, {
@@ -901,10 +868,11 @@ def get_websocket_manager():
     return websocket_manager
 
 async def start_server(host="0.0.0.0", port=8080):
-    """Start the WebSocket server with FastAPI/Uvicorn"""
+    """Start the WebSocket server with FastAPI/Uvicorn and lifespan management"""
     import uvicorn
     from fastapi import FastAPI
     from fastapi.middleware.cors import CORSMiddleware
+    from contextlib import asynccontextmanager
     
     # Load environment
     import os
@@ -918,12 +886,22 @@ async def start_server(host="0.0.0.0", port=8080):
     else:
         print("⚠️  No .env file found")
     
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        # Startup
+        print("🚀 Starting background timeout checker...")
+        await background_manager.start(websocket_manager.audio_buffer_manager, websocket_manager)
+        yield
+        # Shutdown
+        print("🛑 Stopping background timeout checker...")
+        await background_manager.stop()
+    
     print("🚀 Starting ScrumBot WebSocket Server...")
     print(f"📡 WebSocket endpoint: ws://{host}:{port}/ws")
     print(f"🏥 Health check: http://{host}:{port}/health")
     
-    # Create FastAPI app
-    app = FastAPI(title="ScrumBot WebSocket Server")
+    # Create FastAPI app with lifespan
+    app = FastAPI(title="ScrumBot WebSocket Server", lifespan=lifespan)
     
     # Add CORS middleware with WebSocket support
     app.add_middleware(
