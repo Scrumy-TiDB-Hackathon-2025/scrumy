@@ -536,8 +536,9 @@ function handleHelperMessage(messageType, data, sender) {
       break;
       
     case 'AUDIO_DATA':
-      // Forward audio data to backend (already handled by helper tab)
+      // Forward audio data to WebSocket server
       console.log('[MultiTab] Audio data received:', data.audioData.length, 'bytes');
+      sendAudioViaWebSocket(data.audioData, data.timestamp);
       break;
   }
 }
@@ -743,6 +744,33 @@ function initializeWebSocket() {
     // Reconnect after 5 seconds
     setTimeout(initializeWebSocket, 5000);
   };
+}
+
+function sendAudioViaWebSocket(audioData, timestamp) {
+  if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+    console.log('[Content] WebSocket not connected, cannot send audio');
+    return;
+  }
+  
+  const participants = window.meetingDetector?.getParticipants() || [];
+  const message = {
+    type: 'AUDIO_CHUNK_ENHANCED',
+    data: audioData,
+    timestamp: timestamp,
+    platform: currentPlatform,
+    meetingUrl: window.location.href,
+    participants: participants,
+    participant_count: participants.length,
+    metadata: {
+      chunk_size: audioData.length,
+      sample_rate: 16000,
+      channels: 1,
+      format: 'webm'
+    }
+  };
+  
+  websocket.send(JSON.stringify(message));
+  console.log('[Content] Audio chunk sent via WebSocket:', audioData.length, 'bytes');
 }
 
 function sendMeetingEndSignal() {
