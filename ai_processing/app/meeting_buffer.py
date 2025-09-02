@@ -36,8 +36,12 @@ class MeetingBuffer:
         self.last_batch_time = time.time()
         
         # Conditional debug logging
-        from .debug_logger import debug_manager
-        self.logger = debug_manager.get_logger(meeting_id)
+        try:
+            from .debug_logger import debug_manager
+            self.logger = debug_manager.get_logger(meeting_id)
+        except ImportError:
+            from .pipeline_logger import PipelineLogger
+            self.logger = PipelineLogger(meeting_id)
         
         # Configuration
         self.BATCH_INTERVAL = 30  # seconds
