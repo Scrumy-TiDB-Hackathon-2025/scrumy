@@ -1,7 +1,7 @@
 // ScrumBot Extension Configuration
 // Environment-based configuration for dev/prod
 
-const ENVIRONMENT = 'dev'; // Change to 'prod' when backend is ready
+const ENVIRONMENT = 'prod'; // Change to 'prod' when backend is ready
 
 const CONFIGS = {
   dev: {
@@ -34,8 +34,8 @@ const CONFIGS = {
 
   prod: {
     // Production - Real backend services
-    BACKEND_URL: 'https://b5462b7bbb65.ngrok-free.app',
-    WEBSOCKET_URL: 'wss://b5462b7bbb65.ngrok-free.app/ws/audio-stream',
+    BACKEND_URL: 'https://fb3977c56e2e.ngrok-free.app',
+    WEBSOCKET_URL: 'wss://3e1798f0fbb9.ngrok-free.app/ws',
     FRONTEND_URL: 'https://scrumy.vercel.app',
 
     // Production API Endpoints

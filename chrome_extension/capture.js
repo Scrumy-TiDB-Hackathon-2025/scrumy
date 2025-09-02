@@ -63,8 +63,18 @@ class CaptureHelper {
 
   handleCaptureSuccess() {
     this.isCapturing = true;
+    this.recordingStartTime = Date.now();
     this.showStatus('✅ Recording started! Audio is being captured.', 'success');
     this.captureBtn.textContent = '✅ Recording Active';
+    
+    // Send meeting start signal via WebSocket
+    if (window.scrumBotWebSocket && window.scrumBotWebSocket.isConnected) {
+      window.scrumBotWebSocket.sendMeetingEvent('started', {
+        meetingUrl: window.location.href,
+        participants: [{ id: 'user1', name: 'Meeting Participant' }]
+      });
+      console.log('[CaptureHelper] 🔄 Meeting start signal sent via WebSocket');
+    }
     
     // Notify the meeting tab that capture started
     this.notifyMeetingTab('CAPTURE_STARTED', {
@@ -75,13 +85,8 @@ class CaptureHelper {
     // Set up audio stream forwarding
     this.setupAudioForwarding();
 
-    // Auto-close this tab after a delay (optional)
-    if (window.SCRUMBOT_CONFIG?.ENVIRONMENT === 'prod') {
-      setTimeout(() => {
-        this.showStatus('Recording active. This tab will close in 3 seconds...', 'info');
-        setTimeout(() => window.close(), 3000);
-      }, 2000);
-    }
+    // Keep tab open for user control
+    this.showStatus('Recording active. Keep this tab open during recording.', 'info');
   }
 
   handleCaptureFailure(errorMessage) {
@@ -151,6 +156,16 @@ class CaptureHelper {
 
   stopCapture() {
     if (this.audioCapture && this.isCapturing) {
+      // Send meeting end signal via WebSocket
+      if (window.scrumBotWebSocket && window.scrumBotWebSocket.isConnected) {
+        window.scrumBotWebSocket.sendMeetingEvent('ended', {
+          meetingUrl: window.location.href,
+          participants: [{ id: 'user1', name: 'Meeting Participant' }],
+          duration: Date.now() - (this.recordingStartTime || Date.now())
+        });
+        console.log('[CaptureHelper] 🔄 Meeting end signal sent via WebSocket');
+      }
+      
       this.audioCapture.stopCapture();
       this.isCapturing = false;
       
@@ -163,8 +178,8 @@ class CaptureHelper {
         success: true
       });
       
-      // Close this tab after a short delay
-      setTimeout(() => window.close(), 2000);
+      // Keep tab open for user to manually close
+      this.showStatus('Recording stopped. You can close this tab.', 'info');
     }
   }
 

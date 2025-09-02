@@ -372,12 +372,28 @@ function stopEnhancedRecording() {
     window.meetingDetector.stopParticipantMonitoring();
   }
   
+  // Send meeting end signal via WebSocket if available
+  if (window.scrumBotWebSocket && window.scrumBotWebSocket.isConnected) {
+    const participants = window.meetingDetector?.getParticipants() || [];
+    window.scrumBotWebSocket.sendMeetingEvent('ended', {
+      meetingUrl: window.location.href,
+      participants: participants,
+      platform: currentPlatform
+    });
+    console.log('🔄 Meeting end signal sent via WebSocket from content script');
+  }
+  
   // Use the proven multi-tab stop approach
   if (helperTabId) {
     chrome.runtime.sendMessage({
       type: 'MEETING_TO_HELPER',
       messageType: 'STOP_RECORDING',
       targetTabId: helperTabId
+    }, () => {
+      // Handle any runtime errors silently
+      if (chrome.runtime.lastError) {
+        console.log('Helper tab already closed:', chrome.runtime.lastError.message);
+      }
     });
   }
   

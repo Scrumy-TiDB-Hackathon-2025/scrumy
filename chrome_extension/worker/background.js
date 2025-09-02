@@ -7,8 +7,15 @@ let webSocketClient = null;
 // Setup message handlers
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('[Background] Received message:', message.type);
-  handleMessage(message, sender, sendResponse);
-  return true; // Keep message channel open for async responses
+  
+  // Only return true for messages that need async responses
+  if (message.type === 'CREATE_HELPER_TAB') {
+    handleMessage(message, sender, sendResponse);
+    return true; // Keep message channel open for async responses
+  } else {
+    handleMessage(message, sender, sendResponse);
+    return false; // Don't keep channel open for sync messages
+  }
 });
 
 function handleMessage(message, sender, sendResponse) {
@@ -55,6 +62,8 @@ function handleHelperToMeeting(message, sender) {
       type: 'HELPER_TO_MEETING',
       messageType: message.messageType,
       data: message.data
+    }).catch((error) => {
+      console.log('[Background] Target tab not available:', error.message);
     });
   } else {
     // Broadcast to all tabs if no specific target
