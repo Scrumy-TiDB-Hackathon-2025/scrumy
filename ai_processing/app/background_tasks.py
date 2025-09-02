@@ -46,13 +46,12 @@ class BackgroundTaskManager:
                     print(f"🔍 Checking {len(self._audio_buffer_manager.buffers)} buffers for timeout...")
                     
                     for session_id, buffer in list(self._audio_buffer_manager.buffers.items()):
-                        if len(buffer.buffer) > 0:
+                        # Check if buffer should be processed (handles both buffer full and timeout)
+                        if buffer.should_process():
                             duration = buffer.get_duration_ms()
                             time_since_flush = time.time() - buffer.last_flush if buffer.last_flush else 0
-                            
-                            if buffer.should_process():
-                                print(f"⏰ Timeout triggered for session {session_id} ({duration:.1f}ms, {time_since_flush:.1f}s)")
-                                await self._process_timeout_buffer(session_id, buffer)
+                            print(f"⏰ Timeout triggered for session {session_id} ({duration:.1f}ms, {time_since_flush:.1f}s)")
+                            await self._process_timeout_buffer(session_id, buffer)
                 
             except Exception as e:
                 print(f"❌ Error in timeout checker: {e}")

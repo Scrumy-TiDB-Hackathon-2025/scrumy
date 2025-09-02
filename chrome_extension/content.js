@@ -725,7 +725,8 @@ function initializeWebSocket() {
       console.log('📨 WebSocket message:', data);
       
       // Handle different message types
-      if (data.type === 'transcription') {
+      if (data.type === 'transcription_result') {
+        console.log('📝 Transcription text:', data.data?.text || 'EMPTY');
         handleTranscriptionUpdate(data);
       } else if (data.type === 'meeting_processed') {
         handleMeetingProcessed(data);
