@@ -704,11 +704,29 @@ async def start_server(host="0.0.0.0", port=8080):
                     message = json.loads(data)
                     print(f"📬 Received: {message}")
                     
-                    # Echo back for testing
-                    response = {
-                        "type": "ECHO",
-                        "data": message
-                    }
+                    # Handle different message types
+                    message_type = message.get('type')
+                    
+                    if message_type == 'HANDSHAKE':
+                        # Proper handshake acknowledgment
+                        response = {
+                            "type": "HANDSHAKE_ACK",
+                            "serverVersion": "1.0",
+                            "status": "ready",
+                            "supportedFeatures": [
+                                "audio-transcription",
+                                "speaker-identification",
+                                "real-time-processing"
+                            ],
+                            "timestamp": datetime.now().isoformat()
+                        }
+                    else:
+                        # Echo back other messages for testing
+                        response = {
+                            "type": "ECHO",
+                            "data": message
+                        }
+                    
                     response_json = json.dumps(response)
                     await websocket.send_text(response_json)
                     print(f"📤 Sent: {response_json}")
