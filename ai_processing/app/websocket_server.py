@@ -306,21 +306,10 @@ class WebSocketManager:
 
     async def handle_handshake(self, websocket: WebSocket, message: Dict):
         """Handle handshake message"""
-        client_type = message.get('clientType', 'unknown')
-        version = message.get('version', '1.0')
-        capabilities = message.get('capabilities', [])
-
-        logger.info(f"Handshake from {client_type} v{version} with capabilities: {capabilities}")
-
         await self.send_message(websocket, {
             'type': 'HANDSHAKE_ACK',
             'serverVersion': '1.0',
-            'status': 'ready',
-            'supportedFeatures': [
-                'audio-transcription',
-                'speaker-identification',
-                'real-time-processing'
-            ]
+            'status': 'ready'
         })
 
     async def handle_audio_chunk(self, websocket: WebSocket, message: Dict):
@@ -367,13 +356,14 @@ class WebSocketManager:
 
             self.active_connections[websocket]['meeting_session'] = session
 
-            # Log audio chunk
-            session.buffer.logger.log_audio_chunk({
-                "audio_data": audio_data,
-                "participant": participants[0].get('name') if participants else 'Unknown',
-                "chunk_id": len(session.transcript_chunks),
-                "meeting_id": meeting_id
-            })
+            # Log audio chunk (if logger available)
+            if session.buffer.logger:
+                session.buffer.logger.log_audio_chunk({
+                    "audio_data": audio_data,
+                    "participant": participants[0].get('name') if participants else 'Unknown',
+                    "chunk_id": len(session.transcript_chunks),
+                    "meeting_id": meeting_id
+                })
 
             # Convert base64 audio data to bytes if needed
             if isinstance(audio_data, str):
@@ -387,8 +377,8 @@ class WebSocketManager:
                 audio_bytes, metadata
             )
             
-            # Log transcript chunk
-            if transcription_result.get('text'):
+            # Log transcript chunk (if logger available)
+            if transcription_result.get('text') and session.buffer.logger:
                 session.buffer.logger.log_transcript_chunk(
                     transcription_result['text'],
                     participants[0].get('name') if participants else 'Unknown'

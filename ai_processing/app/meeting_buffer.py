@@ -39,6 +39,10 @@ class MeetingBuffer:
         try:
             from .debug_logger import debug_manager
             self.logger = debug_manager.get_logger(meeting_id)
+            if self.logger is None:
+                # Fallback when debug logging is disabled
+                from .pipeline_logger import PipelineLogger
+                self.logger = PipelineLogger(meeting_id)
         except ImportError:
             from .pipeline_logger import PipelineLogger
             self.logger = PipelineLogger(meeting_id)
