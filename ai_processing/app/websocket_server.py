@@ -94,6 +94,8 @@ class AudioProcessor:
                 '-f', audio_path,
                 '--output-txt'
             ]
+            
+            print(f"🤖 Running Whisper: {' '.join(cmd)}")
 
             process = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -102,6 +104,11 @@ class AudioProcessor:
             )
 
             stdout, stderr = await process.communicate()
+            
+            print(f"🤖 Whisper return code: {process.returncode}")
+            print(f"🤖 Whisper stdout: '{stdout.decode('utf-8').strip()}'")
+            if stderr:
+                print(f"🤖 Whisper stderr: '{stderr.decode('utf-8').strip()}'")
 
             if process.returncode == 0:
                 return stdout.decode('utf-8').strip()
@@ -369,13 +376,17 @@ class WebSocketManager:
             if isinstance(audio_data, str):
                 import base64
                 audio_bytes = base64.b64decode(audio_data)
+                print(f"🎵 Decoded audio: {len(audio_bytes)} bytes from base64")
             else:
                 audio_bytes = bytes(audio_data)
+                print(f"🎵 Raw audio: {len(audio_bytes)} bytes")
 
             # Process audio chunk
+            print(f"🎤 Processing audio chunk with Whisper...")
             transcription_result = await self.audio_processor.process_audio_chunk(
                 audio_bytes, metadata
             )
+            print(f"📝 Whisper result: '{transcription_result.get('text', 'EMPTY')}'")
             
             # Log transcript chunk (if logger available)
             if transcription_result.get('text') and session.buffer.logger:
