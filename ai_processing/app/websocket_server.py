@@ -21,6 +21,7 @@ from app.meeting_summarizer import MeetingSummarizer
 from app.task_extractor import TaskExtractor
 from app.integration_adapter import ParticipantData, notify_meeting_processed
 from app.meeting_buffer import MeetingBuffer, TranscriptChunk, BatchProcessor
+from app.audio_buffer import AudioBufferManager, SessionAudioBuffer
 from app.pipeline_logger import PipelineLogger
 import subprocess
 
@@ -45,6 +46,12 @@ class AudioProcessor:
 
                 # Run Whisper transcription
                 transcript = await self._transcribe_audio(temp_path)
+                
+                # Log processing result
+                if transcript:
+                    print(f"✅ Transcription successful: '{transcript[:50]}{'...' if len(transcript) > 50 else ''}'")
+                else:
+                    print(f"⚠️ Empty transcription result")
 
                 # Clean up temp file
                 os.unlink(temp_path)
@@ -78,6 +85,10 @@ class AudioProcessor:
                 wav_file.setsampwidth(sample_width)
                 wav_file.setframerate(sample_rate)
                 wav_file.writeframes(audio_data)
+                
+            # Log audio file details
+            duration_ms = (len(audio_data) / (sample_rate * channels * sample_width)) * 1000
+            print(f"📁 Created WAV: {output_path} ({duration_ms:.1f}ms, {len(audio_data)} bytes)")
 
         except Exception as e:
             logger.error(f"Error writing WAV file: {e}")
@@ -111,7 +122,15 @@ class AudioProcessor:
                 print(f"🤖 Whisper stderr: '{stderr.decode('utf-8').strip()}'")
 
             if process.returncode == 0:
-                return stdout.decode('utf-8').strip()
+                result = stdout.decode('utf-8').strip()
+                if not result:
+                    # Check if output file was created
+                    output_file = f"{audio_path}.txt"
+                    if os.path.exists(output_file):
+                        with open(output_file, 'r') as f:
+                            result = f.read().strip()
+                        os.unlink(output_file)  # Clean up
+                return result
             else:
                 logger.error(f"Whisper error: {stderr.decode('utf-8')}")
                 return ""
@@ -267,7 +286,93 @@ class WebSocketManager:
         self.active_connections: Dict[WebSocket, Dict] = {}
         self.meeting_sessions: Dict[str, MeetingSession] = {}
         self.audio_processor = AudioProcessor()
+        self.audio_buffer_manager = AudioBufferManager()
         self.batch_processor = None  # Initialized when first session is created
+        self._timeout_task = None
+        
+    async def start_timeout_checker(self):
+        """Start background task to check for timeout-based processing"""
+        if self._timeout_task is None:
+            self._timeout_task = asyncio.create_task(self._timeout_checker_loop())
+    
+    async def _timeout_checker_loop(self):
+        """Background loop to check for timeout-based buffer processing"""
+        while True:
+            try:
+                await asyncio.sleep(1.0)  # Check every second
+                
+                # Check all buffers for timeout
+                for session_id, buffer in list(self.audio_buffer_manager.buffers.items()):
+                    if buffer.should_process() and len(buffer.buffer) > 0:
+                        print(f"⏰ Timeout-based processing triggered for session {session_id}")
+                        await self._process_timeout_buffer(session_id, buffer)
+                        
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Timeout checker error: {e}")
+    
+    async def _process_timeout_buffer(self, session_id: str, buffer):
+        """Process buffer due to timeout"""
+        try:
+            duration = buffer.get_duration_ms()
+            print(f"🎤 Processing timeout buffer ({duration:.1f}ms) for session {session_id}")
+            
+            # Create WAV file from buffered audio
+            wav_path = buffer.create_wav_file()
+            if wav_path:
+                try:
+                    # Process audio with Whisper
+                    transcription_result = await self.audio_processor.process_audio_chunk(
+                        buffer.get_buffered_audio(), {}
+                    )
+                    print(f"📝 Timeout result: '{transcription_result.get('text', 'EMPTY')}'")
+                    
+                    # Send result to all connections for this session
+                    await self._broadcast_transcription_result(session_id, transcription_result)
+                    
+                    # Clean up temp file
+                    os.unlink(wav_path)
+                    
+                except Exception as e:
+                    print(f"❌ Timeout processing failed: {e}")
+                    if os.path.exists(wav_path):
+                        os.unlink(wav_path)
+                
+                # Clear buffer after processing
+                buffer.clear()
+                
+        except Exception as e:
+            logger.error(f"Error processing timeout buffer: {e}")
+    
+    async def _broadcast_transcription_result(self, session_id: str, transcription_result: Dict):
+        """Broadcast transcription result to all connections for a session"""
+        try:
+            # Find connections for this session
+            target_connections = []
+            for websocket, connection_info in self.active_connections.items():
+                session = connection_info.get('meeting_session')
+                if session and session.meeting_id == session_id:
+                    target_connections.append(websocket)
+            
+            # Send to all connections
+            for websocket in target_connections:
+                try:
+                    await self.send_message(websocket, {
+                        'type': 'transcription_result',
+                        'data': {
+                            'text': transcription_result.get('text', ''),
+                            'confidence': transcription_result.get('confidence', 0.0),
+                            'timestamp': transcription_result.get('timestamp'),
+                            'speaker': 'Unknown',
+                            'trigger_reason': 'timeout'
+                        }
+                    })
+                except Exception as e:
+                    logger.error(f"Error sending timeout result to connection: {e}")
+                    
+        except Exception as e:
+            logger.error(f"Error broadcasting timeout result: {e}")
 
     async def connect(self, websocket: WebSocket, client_info: Dict):
         """Handle new WebSocket connection"""
@@ -281,6 +386,10 @@ class WebSocketManager:
 
         self.active_connections[websocket] = connection_info
         logger.info(f"New WebSocket connection: {client_info}")
+        
+        # Start timeout checker if this is the first connection
+        if len(self.active_connections) == 1:
+            await self.start_timeout_checker()
 
         # Send handshake acknowledgment
         await self.send_message(websocket, {
@@ -381,12 +490,39 @@ class WebSocketManager:
                 audio_bytes = bytes(audio_data)
                 print(f"🎵 Raw audio: {len(audio_bytes)} bytes")
 
-            # Process audio chunk
-            print(f"🎤 Processing audio chunk with Whisper...")
-            transcription_result = await self.audio_processor.process_audio_chunk(
-                audio_bytes, metadata
-            )
-            print(f"📝 Whisper result: '{transcription_result.get('text', 'EMPTY')}'")
+            # Add to audio buffer and check if ready for processing
+            audio_buffer = self.audio_buffer_manager.get_buffer(meeting_id)
+            ready_for_processing = audio_buffer.add_chunk(audio_bytes, timestamp, metadata)
+            
+            transcription_result = {'text': '', 'confidence': 0.0, 'timestamp': datetime.now().isoformat()}
+            
+            if ready_for_processing:
+                print(f"🎤 Buffer ready ({audio_buffer.get_duration_ms():.1f}ms) - processing with Whisper...")
+                
+                # Create WAV file from buffered audio
+                wav_path = audio_buffer.create_wav_file()
+                if wav_path:
+                    try:
+                        # Process combined audio with Whisper
+                        transcription_result = await self.audio_processor.process_audio_chunk(
+                            audio_buffer.get_buffered_audio(), metadata
+                        )
+                        print(f"📝 Whisper result: '{transcription_result.get('text', 'EMPTY')}'")
+                        
+                        # Clean up temp file
+                        os.unlink(wav_path)
+                        
+                    except Exception as e:
+                        print(f"❌ Whisper processing failed: {e}")
+                        if os.path.exists(wav_path):
+                            os.unlink(wav_path)
+                    
+                    # Clear buffer after processing
+                    audio_buffer.clear()
+                else:
+                    print(f"❌ Failed to create WAV file from buffer")
+            else:
+                print(f"🔄 Buffering audio chunk ({audio_buffer.get_duration_ms():.1f}ms/{audio_buffer.target_duration_ms}ms)")
             
             # Log transcript chunk (if logger available)
             if transcription_result.get('text') and session.buffer.logger:
@@ -426,57 +562,58 @@ class WebSocketManager:
                 speaker_name = session.buffer._fallback_speaker_identification(chunk)
                 transcription_result['speakers'] = [{'name': speaker_name}] if speaker_name != 'Unknown' else []
 
-            # Send transcription result back to client - support shared contract format
-            speakers = transcription_result.get('speakers', [])
-            speaker_name = speakers[0].get('name', 'Unknown') if speakers else 'Unknown'
-            
-            response_data = {
-                'text': transcription_result.get('text', ''),
-                'confidence': transcription_result.get('confidence', 0.0),
-                'timestamp': transcription_result.get('timestamp'),
-                'speaker': speaker_name
-            }
-
-            # Send both formats for compatibility
-            await self.send_message(websocket, {
-                'type': 'transcription_result',  # Shared contract format
-                'data': response_data
-            })
-
-            # Also send extended format for Chrome extension
-            await self.send_message(websocket, {
-                'type': 'TRANSCRIPTION_RESULT',
-                'data': {
-                    **response_data,
-                    'speakers': transcription_result.get('speakers', []),
-                    'meetingId': meeting_id,
-                    'chunkId': len(session.transcript_chunks),
-                    'speaker_id': self._get_speaker_id_from_name(
-                        response_data.get('speaker', 'Unknown'),
-                        session.participant_data
-                    ) if session.participant_data else None,
-                    'speaker_confidence': transcription_result.get('speaker_confidence', 0.0)
+            # Only send transcription result if we actually processed audio
+            if ready_for_processing or transcription_result.get('text'):
+                speakers = transcription_result.get('speakers', [])
+                speaker_name = speakers[0].get('name', 'Unknown') if speakers else 'Unknown'
+                
+                response_data = {
+                    'text': transcription_result.get('text', ''),
+                    'confidence': transcription_result.get('confidence', 0.0),
+                    'timestamp': transcription_result.get('timestamp'),
+                    'speaker': speaker_name
                 }
-            })
 
-            # Broadcast to other clients in the same meeting
-            meeting_update_data = {
-                'meetingId': meeting_id,
-                'participants': list(session.participants),
-                'latestTranscript': transcription_result.get('text', ''),
-                'timestamp': datetime.now().isoformat()
-            }
+                # Send both formats for compatibility
+                await self.send_message(websocket, {
+                    'type': 'transcription_result',  # Shared contract format
+                    'data': response_data
+                })
 
-            # Include enhanced participant data if available
-            if session.participant_data:
-                meeting_update_data['participant_data'] = list(session.participant_data.values())
-                meeting_update_data['participant_count'] = session.participant_count
-                meeting_update_data['platform'] = session.platform
+                # Also send extended format for Chrome extension
+                await self.send_message(websocket, {
+                    'type': 'TRANSCRIPTION_RESULT',
+                    'data': {
+                        **response_data,
+                        'speakers': transcription_result.get('speakers', []),
+                        'meetingId': meeting_id,
+                        'chunkId': len(session.transcript_chunks),
+                        'speaker_id': self._get_speaker_id_from_name(
+                            response_data.get('speaker', 'Unknown'),
+                            session.participant_data
+                        ) if session.participant_data else None,
+                        'speaker_confidence': transcription_result.get('speaker_confidence', 0.0)
+                    }
+                })
 
-            await self.broadcast_to_meeting(meeting_id, {
-                'type': 'MEETING_UPDATE',
-                'data': meeting_update_data
-            })
+                # Broadcast to other clients in the same meeting (only if we have transcription)
+                meeting_update_data = {
+                    'meetingId': meeting_id,
+                    'participants': list(session.participants),
+                    'latestTranscript': transcription_result.get('text', ''),
+                    'timestamp': datetime.now().isoformat()
+                }
+
+                # Include enhanced participant data if available
+                if session.participant_data:
+                    meeting_update_data['participant_data'] = list(session.participant_data.values())
+                    meeting_update_data['participant_count'] = session.participant_count
+                    meeting_update_data['platform'] = session.platform
+
+                await self.broadcast_to_meeting(meeting_id, {
+                    'type': 'MEETING_UPDATE',
+                    'data': meeting_update_data
+                })
 
             logger.info(f"Processed audio chunk for meeting {meeting_id}: {len(transcription_result.get('text', ''))} chars")
 
@@ -511,7 +648,31 @@ class WebSocketManager:
                 session = connection_info['meeting_session']
                 print(f"📋 Processing meeting: {session.meeting_id}")
                 print(f"👥 Participants: {', '.join(session.participants)}")
+                
+                # Process any remaining buffered audio
+                audio_buffer = self.audio_buffer_manager.get_buffer(session.meeting_id)
+                if len(audio_buffer.buffer) > 0:
+                    print(f"🎵 Processing final buffered audio ({audio_buffer.get_duration_ms():.1f}ms)...")
+                    wav_path = audio_buffer.create_wav_file()
+                    if wav_path:
+                        try:
+                            final_result = await self.audio_processor.process_audio_chunk(
+                                audio_buffer.get_buffered_audio(), {}
+                            )
+                            if final_result.get('text'):
+                                session.add_transcript_chunk(final_result)
+                                print(f"✅ Final audio processed: '{final_result['text'][:50]}...'")
+                            os.unlink(wav_path)
+                        except Exception as e:
+                            print(f"❌ Final audio processing failed: {e}")
+                            if os.path.exists(wav_path):
+                                os.unlink(wav_path)
+                
                 await self._generate_meeting_summary(websocket, session)
+                
+                # Clean up audio buffer
+                self.audio_buffer_manager.remove_buffer(session.meeting_id)
+                print(f"🧹 Cleaned up audio buffer for {session.meeting_id}")
             else:
                 print(f"⚠️ No active meeting session found")
             print(f"✅ Meeting end processing completed!")
