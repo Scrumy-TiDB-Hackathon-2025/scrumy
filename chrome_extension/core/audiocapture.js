@@ -116,6 +116,7 @@ class AudioCapture {
       const reader = new FileReader();
       reader.onload = () => {
         const base64Audio = reader.result.split(',')[1];
+        console.log('[AudioCapture] Processing audio chunk:', base64Audio.length, 'bytes');
         this.sendAudioToBackend(base64Audio);
       };
       reader.readAsDataURL(audioBlob);

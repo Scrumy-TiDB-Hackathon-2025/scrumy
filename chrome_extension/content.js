@@ -717,6 +717,13 @@ function initializeWebSocket() {
   
   websocket.onopen = () => {
     console.log('✅ WebSocket connected');
+    // Send handshake
+    websocket.send(JSON.stringify({
+      type: 'HANDSHAKE',
+      clientType: 'chrome_extension',
+      platform: currentPlatform,
+      meetingUrl: window.location.href
+    }));
   };
   
   websocket.onmessage = (event) => {
@@ -749,7 +756,10 @@ function initializeWebSocket() {
 
 function sendAudioViaWebSocket(audioData, timestamp) {
   if (!websocket || websocket.readyState !== WebSocket.OPEN) {
-    console.log('[Content] WebSocket not connected, cannot send audio');
+    console.log('[Content] WebSocket not connected, initializing...');
+    initializeWebSocket();
+    // Queue this audio chunk for when connection is ready
+    setTimeout(() => sendAudioViaWebSocket(audioData, timestamp), 1000);
     return;
   }
   

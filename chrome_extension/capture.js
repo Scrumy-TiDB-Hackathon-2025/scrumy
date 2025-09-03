@@ -97,14 +97,11 @@ class CaptureHelper {
 
   setupAudioForwarding() {
     // Override the audio capture's sendAudioToBackend method
-    // to also forward to the meeting tab
-    const originalSendAudio = this.audioCapture.sendAudioToBackend.bind(this.audioCapture);
-    
+    // to forward to the meeting tab via WebSocket
     this.audioCapture.sendAudioToBackend = (audioData) => {
-      // Send to backend as usual
-      originalSendAudio(audioData);
+      console.log('[CaptureHelper] Forwarding audio to meeting tab:', audioData.length, 'bytes');
       
-      // Also forward to meeting tab
+      // Forward to meeting tab for WebSocket transmission
       this.notifyMeetingTab('AUDIO_DATA', {
         audioData: audioData,
         timestamp: Date.now()
