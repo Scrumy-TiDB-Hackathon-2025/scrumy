@@ -51,10 +51,34 @@ pm2 delete scrumbot-backend scrumbot-websocket 2>/dev/null || true
 # Navigate to ai_processing directory
 cd "$AI_PROCESSING_DIR"
 
-# Start processes with environment variables
-echo "🚀 Starting processes with environment variables..."
-GROQ_API_KEY="$GROQ_API_KEY" pm2 start --name scrumbot-backend --interpreter ./venv/bin/python start_backend.py
-GROQ_API_KEY="$GROQ_API_KEY" pm2 start --name scrumbot-websocket --interpreter ./venv/bin/python start_websocket_server.py
+# Create PM2 ecosystem file with environment variables
+echo "📝 Creating PM2 ecosystem config..."
+cat > ecosystem.config.js << EOF
+module.exports = {
+  apps: [
+    {
+      name: 'scrumbot-backend',
+      script: 'start_backend.py',
+      interpreter: './venv/bin/python',
+      env: {
+        GROQ_API_KEY: '$GROQ_API_KEY'
+      }
+    },
+    {
+      name: 'scrumbot-websocket', 
+      script: 'start_websocket_server.py',
+      interpreter: './venv/bin/python',
+      env: {
+        GROQ_API_KEY: '$GROQ_API_KEY'
+      }
+    }
+  ]
+};
+EOF
+
+# Start processes using ecosystem file
+echo "🚀 Starting processes with ecosystem config..."
+pm2 start ecosystem.config.js
 
 # Save configuration
 pm2 save
