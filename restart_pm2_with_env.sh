@@ -7,11 +7,15 @@ set -e
 
 echo "🔄 Restarting PM2 processes with environment..."
 
-# Navigate to ai_processing directory
-cd ~/scrumy/ai_processing
+# Navigate to project root first
+cd ~/scrumy
 
-# Load .env file if it exists
-if [ -f ".env" ]; then
+# Load .env file if it exists (check both locations)
+if [ -f "ai_processing/.env" ]; then
+    echo "📝 Loading environment variables from ai_processing/.env..."
+    export $(grep -v '^#' ai_processing/.env | xargs)
+    echo "✅ Environment variables loaded from ai_processing/.env"
+elif [ -f ".env" ]; then
     echo "📝 Loading environment variables from .env..."
     export $(grep -v '^#' .env | xargs)
     echo "✅ Environment variables loaded"
@@ -28,6 +32,9 @@ fi
 # Stop existing processes
 echo "⏹️  Stopping existing processes..."
 pm2 stop scrumbot-backend scrumbot-websocket 2>/dev/null || true
+
+# Navigate to ai_processing for PM2 commands
+cd ~/scrumy/ai_processing
 
 # Start processes with updated environment
 echo "🚀 Starting processes with updated environment..."

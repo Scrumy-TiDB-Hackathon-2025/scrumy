@@ -4,10 +4,21 @@ echo "🔍 Groq API Setup Verification"
 echo "=============================="
 echo ""
 
-# Check if .env exists and contains GROQ_API_KEY
+# Check if .env exists and contains GROQ_API_KEY (check both locations)
 echo "1. Checking .env file..."
-if [ -f ".env" ]; then
-    echo "✅ .env file exists"
+if [ -f "ai_processing/.env" ]; then
+    echo "✅ .env file exists in ai_processing/"
+    if grep -q "GROQ_API_KEY" ai_processing/.env; then
+        echo "✅ GROQ_API_KEY found in ai_processing/.env"
+        # Show key (masked)
+        key=$(grep "GROQ_API_KEY" ai_processing/.env | cut -d'=' -f2)
+        masked_key="${key:0:8}...${key: -4}"
+        echo "   Key: $masked_key"
+    else
+        echo "❌ GROQ_API_KEY not found in ai_processing/.env"
+    fi
+elif [ -f ".env" ]; then
+    echo "✅ .env file exists in root"
     if grep -q "GROQ_API_KEY" .env; then
         echo "✅ GROQ_API_KEY found in .env"
         # Show key (masked)
@@ -18,7 +29,7 @@ if [ -f ".env" ]; then
         echo "❌ GROQ_API_KEY not found in .env"
     fi
 else
-    echo "❌ .env file not found"
+    echo "❌ .env file not found in either location"
 fi
 
 echo ""
