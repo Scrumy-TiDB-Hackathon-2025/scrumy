@@ -1,6 +1,0 @@
-{
-  "timestamp": "2025-09-02T23:13:49.940368",
-  "response": "Based on the given information, it appears that the speaker is the same person throughout the meeting, as the text is identical for each segment and the speaker is referred to as \"You\". \n\nHowever, since the participant information is not provided for the speaker, we can't identify the speaker by name. \n\nHere's the JSON output with the speaker identified as \"Proper User\" (the only participant mentioned):\n\n```json\n{\n  \"segments\": [\n    {\"timestamp\": \"[12:30-12:35]\", \"text\": \"[00:00:00.000 --> 00:00:02.000]   You\", \"speaker\": \"Proper User\"},\n    {\"timestamp\": \"[25:00-25:05]\", \"text\": \"[00:00:00.000 --> 00:00:02.000]   You\", \"speaker\": \"Proper User\"},\n    {\"timestamp\": \"[37:30-37:35]\", \"text\": \"[00:00:00.000 --> 00:00:02.000]   You\", \"speaker\": \"Proper User\"}\n  ]\n}\n```",
-  "response_length": 775,
-  "usage_stats": null
-}

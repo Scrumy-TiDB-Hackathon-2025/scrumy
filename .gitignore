@@ -296,3 +296,9 @@ __pycache__/
 # Corrected Strategy Documents (Internal Use Only)
 # ----------------
 CORRECTED_OAUTH_IMPLEMENTATION_STRATEGY.md
+# Debug and test files
+ai_processing/pipeline_logs/
+logsfromserverandchrome.txt
+chrome_extension/test-audio-direct.html
+*.log
+*.jsonl
