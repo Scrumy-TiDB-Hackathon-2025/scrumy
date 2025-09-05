@@ -11,6 +11,7 @@ const FRONTEND_URL = config.FRONTEND_URL;
 const ENDPOINTS = config.ENDPOINTS;
 
 let meetingId = null;
+let transcriptLog = []; // Store all transcripts for download
 
 // Check if we're on a supported meeting platform
 const currentPlatform = config.SUPPORTED_PLATFORMS.find(platform =>
@@ -223,6 +224,19 @@ function createScrumBotUI() {
           font-size: 11px;
         ">🔍 Debug</button>
       </div>
+      
+      <div style="margin-top: 8px;">
+        <button id="scrumbot-download" style="
+          width: 100%;
+          padding: 6px;
+          border: 1px solid rgba(255,255,255,0.3);
+          border-radius: 6px;
+          background: transparent;
+          color: white;
+          cursor: pointer;
+          font-size: 11px;
+        ">💾 Download Transcript (<span id="transcript-count">0</span>)</button>
+      </div>
     </div>
   `;
 
@@ -233,6 +247,7 @@ function createScrumBotUI() {
   document.getElementById('scrumbot-dashboard').addEventListener('click', openDashboard);
   document.getElementById('scrumbot-test').addEventListener('click', testAPI);
   document.getElementById('scrumbot-debug').addEventListener('click', debugComponents);
+  document.getElementById('scrumbot-download').addEventListener('click', downloadTranscript);
 }
 
 // Enhanced fetch function with ngrok support
@@ -363,6 +378,16 @@ async function startEnhancedRecording() {
 function stopEnhancedRecording() {
   console.log('⏹️ Stopping enhanced recording...');
   
+  // CRITICAL: Stop recording state first to prevent infinite loops
+  isRecordingViaHelper = false;
+  wsRetryCount = 0; // Reset WebSocket retry counter
+  
+  // Auto-download transcript if we have data
+  if (transcriptLog.length > 0) {
+    console.log(`📝 Auto-downloading transcript with ${transcriptLog.length} segments`);
+    setTimeout(() => downloadTranscript(), 1000);
+  }
+  
   // Get UI elements
   const button = document.getElementById('scrumbot-toggle');
   const statusElement = document.getElementById('connection-status');
@@ -404,7 +429,6 @@ function stopEnhancedRecording() {
     window.scrumBotUI.updateParticipants([]);
   }
   
-  isRecordingViaHelper = false;
   helperTabId = null;
   
   testBackendConnection(); // Reset status
@@ -732,8 +756,13 @@ function initializeWebSocket() {
       console.log('📨 WebSocket message:', data);
       
       // Handle different message types
-      if (data.type === 'transcription_result') {
-        console.log('📝 Transcription text:', data.data?.text || 'EMPTY');
+      if (data.type === 'transcription_result' || data.type === 'TRANSCRIPTION_RESULT') {
+        const transcriptText = data.data?.text || data.text || 'EMPTY';
+        console.log('📝 Transcription text:', transcriptText);
+        
+        // Add to transcript log for download
+        addToTranscriptLog(transcriptText, data.data?.timestamp || new Date().toISOString());
+        
         handleTranscriptionUpdate(data);
       } else if (data.type === 'meeting_processed') {
         handleMeetingProcessed(data);
@@ -754,14 +783,29 @@ function initializeWebSocket() {
   };
 }
 
+let wsRetryCount = 0;
+const MAX_WS_RETRIES = 5;
+
 function sendAudioViaWebSocket(audioData, timestamp) {
   if (!websocket || websocket.readyState !== WebSocket.OPEN) {
-    console.log('[Content] WebSocket not connected, initializing...');
+    if (wsRetryCount >= MAX_WS_RETRIES) {
+      console.log('[Content] WebSocket max retries reached, dropping audio chunk');
+      return;
+    }
+    
+    console.log(`[Content] WebSocket not connected, retry ${wsRetryCount + 1}/${MAX_WS_RETRIES}`);
+    wsRetryCount++;
     initializeWebSocket();
-    // Queue this audio chunk for when connection is ready
-    setTimeout(() => sendAudioViaWebSocket(audioData, timestamp), 1000);
+    
+    // Only retry if we're still recording
+    if (isRecordingViaHelper) {
+      setTimeout(() => sendAudioViaWebSocket(audioData, timestamp), 2000);
+    }
     return;
   }
+  
+  // Reset retry count on successful connection
+  wsRetryCount = 0;
   
   const participants = window.meetingDetector?.getParticipants() || [];
   const message = {
@@ -824,6 +868,55 @@ function handleMeetingProcessed(data) {
 // Initialize WebSocket when content script loads
 if (currentPlatform) {
   initializeWebSocket();
+}
+
+function addToTranscriptLog(text, timestamp) {
+  if (text && text !== 'EMPTY' && text.trim().length > 0) {
+    transcriptLog.push({
+      timestamp: timestamp,
+      text: text.trim(),
+      meetingId: meetingId
+    });
+    
+    // Update transcript count in UI
+    const countElement = document.getElementById('transcript-count');
+    if (countElement) {
+      countElement.textContent = transcriptLog.length;
+    }
+    
+    console.log(`📝 Added to transcript log (${transcriptLog.length} total):`, text);
+  }
+}
+
+function downloadTranscript() {
+  if (transcriptLog.length === 0) {
+    alert('No transcript data available to download.');
+    return;
+  }
+  
+  // Create transcript content
+  const header = `ScrumBot Transcript Validation\nMeeting ID: ${meetingId}\nPlatform: ${currentPlatform}\nGenerated: ${new Date().toISOString()}\nTotal Segments: ${transcriptLog.length}\n\n${'='.repeat(50)}\n\n`;
+  
+  const transcriptContent = transcriptLog.map((entry, index) => {
+    const time = new Date(entry.timestamp).toLocaleTimeString();
+    return `[${index + 1}] ${time}\n${entry.text}\n`;
+  }).join('\n');
+  
+  const fullContent = header + transcriptContent;
+  
+  // Create and download file
+  const blob = new Blob([fullContent], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `scrumbot-transcript-${meetingId}-${new Date().toISOString().split('T')[0]}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  
+  console.log(`💾 Downloaded transcript with ${transcriptLog.length} segments`);
+  alert(`✅ Transcript downloaded!\n${transcriptLog.length} segments saved for validation.`);
 }
 
 // Auto-refresh connection status

@@ -20,6 +20,12 @@ class CaptureHelper {
   setupEventListeners() {
     this.captureBtn.addEventListener('click', () => this.startCapture());
     
+    // Add test button listener
+    const testBtn = document.getElementById('testBtn');
+    if (testBtn) {
+      testBtn.addEventListener('click', () => this.startDirectTest());
+    }
+    
     // Listen for messages from meeting tab
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       this.handleMessage(message, sender, sendResponse);
@@ -41,22 +47,26 @@ class CaptureHelper {
       this.captureBtn.disabled = true;
       this.captureBtn.textContent = '⏳ Starting...';
 
+      console.log('🧪 [CaptureHelper] Starting test capture');
+
       // Initialize audio capture if not already done
       if (!this.audioCapture) {
-        this.audioCapture = new AudioCapture();
+        console.log('🎤 [CaptureHelper] Initializing AudioCaptureHybrid');
+        this.audioCapture = new AudioCaptureHybrid();
+        const initialized = await this.audioCapture.initialize();
+        if (!initialized) {
+          throw new Error('Failed to initialize hybrid audio capture');
+        }
       }
 
-      // Start the capture process
-      const success = await this.audioCapture.startCapture();
-      
-      if (success) {
-        this.handleCaptureSuccess();
-      } else {
-        this.handleCaptureFailure('Failed to start audio capture');
-      }
+      // Start hybrid capture (handles both tab and mic internally)
+      console.log('🎤 [CaptureHelper] Starting hybrid audio capture');
+      await this.audioCapture.startCapture();
+      console.log('🎤 [CaptureHelper] Hybrid audio capture started successfully');
+      this.handleCaptureSuccess();
 
     } catch (error) {
-      console.error('[CaptureHelper] Capture error:', error);
+      console.error('🧪 [CaptureHelper] Capture error:', error);
       this.handleCaptureFailure(error.message);
     }
   }
@@ -64,23 +74,30 @@ class CaptureHelper {
   handleCaptureSuccess() {
     this.isCapturing = true;
     this.recordingStartTime = Date.now();
-    this.showStatus('✅ Recording started! Audio is being captured.', 'success');
-    this.captureBtn.textContent = '✅ Recording Active';
+    this.showStatus('🎤 Hybrid recording started! Capturing tab + microphone audio.', 'success');
+    this.captureBtn.textContent = '🔴 Recording (Hybrid)';
     
-    // Send meeting start signal via WebSocket
+    // Add stop button
+    setTimeout(() => {
+      this.captureBtn.textContent = '⏹️ Stop Recording';
+      this.captureBtn.disabled = false;
+      this.captureBtn.onclick = () => this.stopCapture();
+    }, 1000);
+
+    // Set up audio forwarding to WebSocket
+    this.setupAudioForwarding();
+    
+    // Send meeting start signal
     this.sendMeetingStartSignal();
     
-    // Notify the meeting tab that capture started
+    // Notify meeting tab
     this.notifyMeetingTab('CAPTURE_STARTED', {
       success: true,
-      helperTabId: chrome.runtime.id
+      mode: this.audioCapture.getCurrentMode()
     });
-
-    // Set up audio stream forwarding
-    this.setupAudioForwarding();
-
+    
     // Keep tab open for user control
-    this.showStatus('Recording active. Keep this tab open during recording.', 'info');
+    this.showStatus('🎤 Hybrid mode: Recording tab + mic audio. Audio streaming to server.', 'info');
   }
 
   handleCaptureFailure(errorMessage) {
@@ -147,14 +164,11 @@ class CaptureHelper {
 
   stopCapture() {
     if (this.audioCapture && this.isCapturing) {
-      // Send meeting end signal via WebSocket
-      this.sendMeetingEndSignal();
-      
       this.audioCapture.stopCapture();
       this.isCapturing = false;
       
-      this.showStatus('Recording stopped', 'info');
-      this.captureBtn.textContent = '⏹️ Stopped';
+      this.showStatus('🎤 Hybrid recording stopped - WAV file downloading...', 'success');
+      this.captureBtn.textContent = '✅ File Generated';
       this.captureBtn.disabled = true;
       
       // Notify meeting tab
@@ -163,7 +177,7 @@ class CaptureHelper {
       });
       
       // Keep tab open for user to manually close
-      this.showStatus('Recording stopped. You can close this tab.', 'info');
+      this.showStatus('🎤 Recording complete! Check downloads for hybrid audio file.', 'success');
     }
   }
 
@@ -242,6 +256,61 @@ class CaptureHelper {
       console.log('[CaptureHelper] 🔄 Meeting end signal sent via WebSocket');
     } else {
       console.log('[CaptureHelper] ⚠️ WebSocket not connected, cannot send meeting end signal');
+    }
+  }
+
+  async startDirectTest() {
+    try {
+      this.showStatus('🧪 Starting direct audio test...', 'info');
+      
+      const testBtn = document.getElementById('testBtn');
+      const captureBtn = document.getElementById('captureBtn');
+      
+      testBtn.disabled = true;
+      captureBtn.disabled = true;
+      testBtn.textContent = '⏳ Starting Test...';
+      
+      // Get display media stream
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+          sampleRate: 16000
+        }
+      });
+      
+      // Stop video tracks
+      stream.getVideoTracks().forEach(track => track.stop());
+      
+      // Initialize test audio capture
+      const testCapture = new AudioCaptureTest();
+      await testCapture.initialize();
+      await testCapture.startCapture(stream);
+      
+      this.showStatus('🔴 Test recording active! Speak for 10-30 seconds...', 'success');
+      testBtn.textContent = '⏹️ Stop Test';
+      testBtn.disabled = false;
+      
+      // Change button to stop function
+      testBtn.onclick = () => {
+        testCapture.stopCapture();
+        this.showStatus('✅ Test complete! Check downloads for WAV file.', 'success');
+        testBtn.textContent = '✅ Test Complete';
+        testBtn.disabled = true;
+        captureBtn.disabled = false;
+      };
+      
+    } catch (error) {
+      console.error('🧪 Direct test error:', error);
+      this.showStatus('❌ Test failed: ' + error.message, 'error');
+      
+      const testBtn = document.getElementById('testBtn');
+      const captureBtn = document.getElementById('captureBtn');
+      testBtn.disabled = false;
+      captureBtn.disabled = false;
+      testBtn.textContent = '🧪 Try Again';
     }
   }
 
