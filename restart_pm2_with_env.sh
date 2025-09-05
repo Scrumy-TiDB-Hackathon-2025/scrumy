@@ -14,11 +14,18 @@ AI_PROCESSING_DIR="$PROJECT_DIR/ai_processing"
 echo "📁 Project directory: $PROJECT_DIR"
 echo "📁 AI processing directory: $AI_PROCESSING_DIR"
 
-# Load .env file from ai_processing directory
+# Find and load .env file from ai_processing directory
+ENV_FILE=""
 if [ -f "$AI_PROCESSING_DIR/.env" ]; then
-    echo "📝 Loading environment variables from $AI_PROCESSING_DIR/.env..."
+    ENV_FILE="$AI_PROCESSING_DIR/.env"
+elif [ -f "$AI_PROCESSING_DIR/.env/.env" ]; then
+    ENV_FILE="$AI_PROCESSING_DIR/.env/.env"
+fi
+
+if [ -n "$ENV_FILE" ]; then
+    echo "📝 Loading environment variables from $ENV_FILE..."
     set -a  # automatically export all variables
-    source "$AI_PROCESSING_DIR/.env"
+    source "$ENV_FILE"
     set +a  # stop automatically exporting
     echo "✅ Environment variables loaded"
     
@@ -30,8 +37,9 @@ if [ -f "$AI_PROCESSING_DIR/.env" ]; then
         echo "❌ GROQ_API_KEY not found in environment!"
     fi
 else
-    echo "❌ No .env file found at $AI_PROCESSING_DIR/.env"
-    echo "   Run: cd ai_processing && ./setup_groq_key.sh"
+    echo "❌ No .env file found in $AI_PROCESSING_DIR"
+    echo "   Available .env files:"
+    find "$AI_PROCESSING_DIR" -name ".env" -type f 2>/dev/null || echo "   None found"
     exit 1
 fi
 
