@@ -1,0 +1,26 @@
+{
+  "timestamp": "2025-09-02T23:13:48.723640",
+  "chunk_count": 3,
+  "chunks": [
+    {
+      "timestamp_start": 750.0,
+      "timestamp_end": 755.0,
+      "text": "[00:00:00.000 --> 00:00:02.000]   You",
+      "confidence": 0.85
+    },
+    {
+      "timestamp_start": 1500.0,
+      "timestamp_end": 1505.0,
+      "text": "[00:00:00.000 --> 00:00:02.000]   You",
+      "confidence": 0.85
+    },
+    {
+      "timestamp_start": 2250.0,
+      "timestamp_end": 2255.0,
+      "text": "[00:00:00.000 --> 00:00:02.000]   You",
+      "confidence": 0.85
+    }
+  ],
+  "combined_transcript": "[12:30-12:35] \"[00:00:00.000 --> 00:00:02.000]   You\"\n[25:00-25:05] \"[00:00:00.000 --> 00:00:02.000]   You\"\n[37:30-37:35] \"[00:00:00.000 --> 00:00:02.000]   You\"",
+  "total_length": 161
+}

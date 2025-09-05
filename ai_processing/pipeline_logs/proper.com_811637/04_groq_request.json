@@ -1,0 +1,6 @@
+{
+  "timestamp": "2025-09-02T23:13:48.724011",
+  "model": "groq-llama3-8b-8192",
+  "prompt": "Participants: Proper User (, Participant)\nMeeting: proper.com_811637\nPlatform: Meeting Platform\n\nTranscript with timestamps:\n[12:30-12:35] \"[00:00:00.000 --> 00:00:02.000]   You\"\n[25:00-25:05] \"[00:00:00.000 --> 00:00:02.000]   You\"\n[37:30-37:35] \"[00:00:00.000 --> 00:00:02.000]   You\"\n\nIdentify the speaker for each segment. Use participant names when possible.\nReturn JSON format: {\"segments\": [{\"timestamp\": \"[00:00-00:05]\", \"text\": \"...\", \"speaker\": \"Name\"}]}",
+  "prompt_length": 464
+}

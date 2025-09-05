@@ -285,7 +285,15 @@ class ScrumBotUI {
   }
 
   addTranscript(transcriptData) {
-    this.transcripts.push(transcriptData);
+    // Ensure transcriptData has required fields
+    const transcript = {
+      text: transcriptData.text || transcriptData.transcript || '',
+      speaker: transcriptData.speaker || transcriptData.speaker_name || 'Unknown',
+      confidence: transcriptData.confidence || null,
+      timestamp: transcriptData.timestamp || new Date().toISOString()
+    };
+    
+    this.transcripts.push(transcript);
     
     // Keep only last 10 transcripts
     if (this.transcripts.length > 10) {
@@ -302,7 +310,7 @@ class ScrumBotUI {
         ">
           <div style="display: flex; align-items: center; margin-bottom: 2px;">
             <span style="font-weight: 600; color: #fbbf24;">
-              ${transcript.speaker || 'Unknown'}:
+              ${transcript.speaker}:
             </span>
             <span style="margin-left: auto; font-size: 10px; opacity: 0.6;">
               ${transcript.confidence ? Math.round(transcript.confidence * 100) + '%' : ''}

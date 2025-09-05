@@ -4,32 +4,41 @@ echo "🔍 Groq API Setup Verification"
 echo "=============================="
 echo ""
 
-# Check if .env exists and contains GROQ_API_KEY (check both locations)
+# Get the correct project directory
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AI_PROCESSING_DIR="$PROJECT_DIR/ai_processing"
+
+echo "📁 Project directory: $PROJECT_DIR"
+echo "📁 AI processing directory: $AI_PROCESSING_DIR"
+echo ""
+
+# Load environment from .env file for testing
+if [ -f "$AI_PROCESSING_DIR/.env" ]; then
+    set -a
+    source "$AI_PROCESSING_DIR/.env"
+    set +a
+fi
+
+# Check if .env exists and contains GROQ_API_KEY
 echo "1. Checking .env file..."
-if [ -f "ai_processing/.env" ]; then
-    echo "✅ .env file exists in ai_processing/"
-    if grep -q "GROQ_API_KEY" ai_processing/.env; then
-        echo "✅ GROQ_API_KEY found in ai_processing/.env"
-        # Show key (masked)
-        key=$(grep "GROQ_API_KEY" ai_processing/.env | cut -d'=' -f2)
-        masked_key="${key:0:8}...${key: -4}"
-        echo "   Key: $masked_key"
-    else
-        echo "❌ GROQ_API_KEY not found in ai_processing/.env"
-    fi
-elif [ -f ".env" ]; then
-    echo "✅ .env file exists in root"
-    if grep -q "GROQ_API_KEY" .env; then
+if [ -f "$AI_PROCESSING_DIR/.env" ]; then
+    echo "✅ .env file exists at $AI_PROCESSING_DIR/.env"
+    if grep -q "GROQ_API_KEY" "$AI_PROCESSING_DIR/.env"; then
         echo "✅ GROQ_API_KEY found in .env"
         # Show key (masked)
-        key=$(grep "GROQ_API_KEY" .env | cut -d'=' -f2)
-        masked_key="${key:0:8}...${key: -4}"
-        echo "   Key: $masked_key"
+        key=$(grep "GROQ_API_KEY" "$AI_PROCESSING_DIR/.env" | cut -d'=' -f2)
+        if [ -n "$key" ]; then
+            masked_key="${key:0:8}...${key: -4}"
+            echo "   Key: $masked_key"
+        else
+            echo "❌ GROQ_API_KEY is empty in .env"
+        fi
     else
         echo "❌ GROQ_API_KEY not found in .env"
     fi
 else
-    echo "❌ .env file not found in either location"
+    echo "❌ .env file not found at $AI_PROCESSING_DIR/.env"
+    echo "   Run: cd ai_processing && ./setup_groq_key.sh"
 fi
 
 echo ""
@@ -41,6 +50,7 @@ if [ -n "$GROQ_API_KEY" ]; then
     echo "✅ GROQ_API_KEY in environment: $masked_env_key"
 else
     echo "❌ GROQ_API_KEY not in environment"
+    echo "   Try: source ai_processing/.env"
 fi
 
 echo ""
@@ -85,7 +95,15 @@ fi
 
 echo ""
 echo "📋 Recommendations:"
-echo "1. If .env exists but environment is empty: source .env"
-echo "2. If PM2 process doesn't have key: restart PM2 with ecosystem file"
+if [ -f "$AI_PROCESSING_DIR/.env" ] && [ -z "$GROQ_API_KEY" ]; then
+    echo "1. Load environment: source ai_processing/.env"
+    echo "2. Restart PM2: ./restart_pm2_with_env.sh"
+elif [ -z "$GROQ_API_KEY" ]; then
+    echo "1. Setup API key: cd ai_processing && ./setup_groq_key.sh"
+    echo "2. Restart PM2: ./restart_pm2_with_env.sh"
+else
+    echo "1. Environment looks good!"
+    echo "2. If PM2 issues persist: ./restart_pm2_with_env.sh"
+fi
 echo "3. If API test fails: regenerate key at https://console.groq.com/"
-echo "4. Check server logs for Groq-related errors"
+echo "4. Check server logs: pm2 logs scrumbot-backend --lines 10"
