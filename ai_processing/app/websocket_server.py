@@ -636,6 +636,16 @@ class WebSocketManager:
             })
         elif event_type in ['ended', 'meeting_ended']:
             print(f"\n🏁 Meeting ended - starting final processing...")
+            
+            # Send initial processing status
+            await self.send_message(websocket, {
+                'type': 'PROCESSING_STATUS',
+                'data': {
+                    'message': 'Starting final processing...',
+                    'stage': 'initialization'
+                }
+            })
+            
             # Process final summary if we have a session
             connection_info = self.active_connections.get(websocket)
             if connection_info and connection_info.get('meeting_session'):
@@ -646,6 +656,14 @@ class WebSocketManager:
                 # Process any remaining buffered audio
                 audio_buffer = self.audio_buffer_manager.get_buffer(session.meeting_id)
                 if len(audio_buffer.buffer) > 0:
+                    await self.send_message(websocket, {
+                        'type': 'PROCESSING_STATUS',
+                        'data': {
+                            'message': f'Processing final audio ({audio_buffer.get_duration_ms():.1f}ms)...',
+                            'stage': 'final_audio'
+                        }
+                    })
+                    
                     print(f"🎵 Processing final buffered audio ({audio_buffer.get_duration_ms():.1f}ms)...")
                     wav_path = audio_buffer.create_wav_file()
                     if wav_path:
@@ -662,13 +680,40 @@ class WebSocketManager:
                             if os.path.exists(wav_path):
                                 os.unlink(wav_path)
                 
+                # Send processing status before summary generation
+                await self.send_message(websocket, {
+                    'type': 'PROCESSING_STATUS',
+                    'data': {
+                        'message': 'Generating meeting summary and tasks...',
+                        'stage': 'summary_generation'
+                    }
+                })
+                
                 await self._generate_meeting_summary(websocket, session)
+                
+                # Send completion signal
+                await self.send_message(websocket, {
+                    'type': 'PROCESSING_COMPLETE',
+                    'data': {
+                        'message': 'Meeting processing completed',
+                        'total_transcripts': len(session.transcript_chunks),
+                        'meeting_id': session.meeting_id
+                    }
+                })
                 
                 # Clean up audio buffer
                 self.audio_buffer_manager.remove_buffer(session.meeting_id)
                 print(f"🧹 Cleaned up audio buffer for {session.meeting_id}")
             else:
                 print(f"⚠️ No active meeting session found")
+                # Send completion even if no session
+                await self.send_message(websocket, {
+                    'type': 'PROCESSING_COMPLETE',
+                    'data': {
+                        'message': 'No active session - processing completed',
+                        'total_transcripts': 0
+                    }
+                })
             print(f"✅ Meeting end processing completed!")
 
     async def _generate_meeting_summary(self, websocket: WebSocket, session: MeetingSession):

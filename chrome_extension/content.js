@@ -382,12 +382,6 @@ function stopEnhancedRecording() {
   isRecordingViaHelper = false;
   wsRetryCount = 0; // Reset WebSocket retry counter
   
-  // Auto-download transcript if we have data
-  if (transcriptLog.length > 0) {
-    console.log(`📝 Auto-downloading transcript with ${transcriptLog.length} segments`);
-    setTimeout(() => downloadTranscript(), 1000);
-  }
-  
   // Get UI elements
   const button = document.getElementById('scrumbot-toggle');
   const statusElement = document.getElementById('connection-status');
@@ -399,6 +393,27 @@ function stopEnhancedRecording() {
   
   // Send meeting end signal via WebSocket
   sendMeetingEndSignal();
+  
+  // Update UI to show processing state
+  if (button && statusElement) {
+    button.innerHTML = '⏳ Processing final audio...';
+    button.disabled = true;
+    statusElement.textContent = '🔄 Waiting for server processing...';
+  }
+  
+  // Start dynamic processing timeout
+  startProcessingTimeout();
+}
+
+function completeRecordingStop() {
+  console.log('✅ Completing recording stop...');
+  
+  // Set shutdown flag to prevent WebSocket reconnection
+  isShuttingDown = true;
+  
+  // Get UI elements
+  const button = document.getElementById('scrumbot-toggle');
+  const statusElement = document.getElementById('connection-status');
   
   // Use the proven multi-tab stop approach
   if (helperTabId) {
@@ -431,7 +446,11 @@ function stopEnhancedRecording() {
   
   helperTabId = null;
   
-  testBackendConnection(); // Reset status
+  // Reset shutdown flag after a delay
+  setTimeout(() => {
+    isShuttingDown = false;
+    testBackendConnection(); // Reset status
+  }, 2000);
 }
 
 function startMultiTabRecording(button, statusElement) {
@@ -728,6 +747,7 @@ function debugComponents() {
 
 // WebSocket connection for real-time communication
 let websocket = null;
+let isShuttingDown = false; // Flag to prevent reconnection during shutdown
 
 function initializeWebSocket() {
   if (websocket && websocket.readyState === WebSocket.OPEN) {
@@ -766,6 +786,10 @@ function initializeWebSocket() {
         handleTranscriptionUpdate(data);
       } else if (data.type === 'meeting_processed') {
         handleMeetingProcessed(data);
+      } else if (data.type === 'PROCESSING_STATUS') {
+        handleProcessingStatus(data);
+      } else if (data.type === 'PROCESSING_COMPLETE') {
+        handleProcessingComplete(data);
       }
     } catch (error) {
       console.error('❌ WebSocket message parse error:', error);
@@ -778,8 +802,12 @@ function initializeWebSocket() {
   
   websocket.onclose = () => {
     console.log('🔌 WebSocket disconnected');
-    // Reconnect after 5 seconds
-    setTimeout(initializeWebSocket, 5000);
+    // Only reconnect if not shutting down
+    if (!isShuttingDown) {
+      setTimeout(initializeWebSocket, 5000);
+    } else {
+      console.log('🚫 Skipping reconnect - recording stopped');
+    }
   };
 }
 
@@ -853,7 +881,7 @@ function sendMeetingEndSignal() {
 function handleTranscriptionUpdate(data) {
   // Update UI with new transcription
   if (window.scrumBotUI) {
-    window.scrumBotUI.addTranscript(data.transcript);
+    window.scrumBotUI.addTranscript(data.data);
   }
 }
 
@@ -863,6 +891,60 @@ function handleMeetingProcessed(data) {
   if (window.scrumBotUI) {
     window.scrumBotUI.updateMeetingAnalysis(data.analysis);
   }
+}
+
+let processingTimeoutId = null;
+const PROCESSING_TIMEOUT_MS = 30000; // 30 seconds
+
+function startProcessingTimeout() {
+  console.log('⏱️ Starting processing timeout (30s)');
+  
+  processingTimeoutId = setTimeout(() => {
+    console.log('⏰ Processing timeout reached - completing stop');
+    handleProcessingComplete({ timeout: true });
+  }, PROCESSING_TIMEOUT_MS);
+}
+
+function resetProcessingTimeout() {
+  if (processingTimeoutId) {
+    clearTimeout(processingTimeoutId);
+    processingTimeoutId = setTimeout(() => {
+      console.log('⏰ Processing timeout reached - completing stop');
+      handleProcessingComplete({ timeout: true });
+    }, PROCESSING_TIMEOUT_MS);
+  }
+}
+
+function handleProcessingStatus(data) {
+  console.log('🔄 Processing status:', data.data?.message || 'Processing...');
+  
+  // Reset timeout on each status update
+  resetProcessingTimeout();
+  
+  // Update UI with current status
+  const statusElement = document.getElementById('connection-status');
+  if (statusElement) {
+    statusElement.textContent = `🔄 ${data.data?.message || 'Processing audio...'}` ;
+  }
+}
+
+function handleProcessingComplete(data) {
+  console.log('✅ Processing complete:', data);
+  
+  // Clear timeout
+  if (processingTimeoutId) {
+    clearTimeout(processingTimeoutId);
+    processingTimeoutId = null;
+  }
+  
+  // Auto-download transcript if we have data
+  if (transcriptLog.length > 0) {
+    console.log(`📝 Auto-downloading transcript with ${transcriptLog.length} segments`);
+    downloadTranscript();
+  }
+  
+  // Complete the recording stop
+  completeRecordingStop();
 }
 
 // Initialize WebSocket when content script loads
