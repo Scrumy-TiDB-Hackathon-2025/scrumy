@@ -29,20 +29,27 @@ if [[ ! "$GROQ_KEY" =~ ^gsk_ ]]; then
     fi
 fi
 
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="$SCRIPT_DIR/.env"
+
+echo "📁 Script directory: $SCRIPT_DIR"
+echo "📝 .env file location: $ENV_FILE"
+
 # Create .env file if it doesn't exist
-if [ ! -f ".env" ]; then
+if [ ! -f "$ENV_FILE" ]; then
     echo "📝 Creating .env file..."
-    touch .env
+    touch "$ENV_FILE"
 fi
 
 # Check if GROQ_API_KEY already exists in .env
-if grep -q "GROQ_API_KEY" .env; then
+if grep -q "GROQ_API_KEY" "$ENV_FILE"; then
     echo "🔄 Updating existing GROQ_API_KEY in .env..."
     # Use sed to replace the line
-    sed -i.bak "s/^GROQ_API_KEY=.*/GROQ_API_KEY=$GROQ_KEY/" .env
+    sed -i.bak "s/^GROQ_API_KEY=.*/GROQ_API_KEY=$GROQ_KEY/" "$ENV_FILE"
 else
     echo "➕ Adding GROQ_API_KEY to .env..."
-    echo "GROQ_API_KEY=$GROQ_KEY" >> .env
+    echo "GROQ_API_KEY=$GROQ_KEY" >> "$ENV_FILE"
 fi
 
 # Export for current session
