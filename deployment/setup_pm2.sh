@@ -10,10 +10,19 @@ echo "⚙️  Setting up PM2 processes..."
 # Navigate to ai_processing directory
 cd ~/scrumy/ai_processing
 
+# Load .env file if it exists
+if [ -f ".env" ]; then
+    echo "📝 Loading environment variables from .env..."
+    export $(grep -v '^#' .env | xargs)
+    echo "✅ Environment variables loaded"
+else
+    echo "⚠️  No .env file found - using system environment"
+fi
+
 # Start PM2 processes using direct commands (proven to work)
 echo "🚀 Starting PM2 processes..."
-pm2 start --name scrumbot-backend --interpreter venv/bin/python start_backend.py
-pm2 start --name scrumbot-websocket --interpreter venv/bin/python start_websocket_server.py
+pm2 start --name scrumbot-backend --interpreter venv/bin/python start_backend.py --update-env
+pm2 start --name scrumbot-websocket --interpreter venv/bin/python start_websocket_server.py --update-env
 
 # Save PM2 configuration
 pm2 save
