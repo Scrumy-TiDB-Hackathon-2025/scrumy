@@ -1,7 +1,8 @@
 // websocket-client.js - WebSocket client for real-time audio streaming
 
-// WebSocket Event Constants (inline for Chrome extension compatibility)
-const WebSocketEventTypes = {
+// Use global constants to avoid conflicts (defined in content.js)
+const WebSocketEventTypes = window.ScrumBotWebSocketConstants
+  ?.WebSocketEventTypes || {
   HANDSHAKE: "HANDSHAKE",
   HANDSHAKE_ACK: "HANDSHAKE_ACK",
   TRANSCRIPTION_RESULT: "TRANSCRIPTION_RESULT",
@@ -11,40 +12,11 @@ const WebSocketEventTypes = {
   ERROR: "ERROR",
 };
 
-// Deprecated event names mapping
-const DEPRECATED_EVENT_NAMES = {
-  transcription_result: WebSocketEventTypes.TRANSCRIPTION_RESULT,
-  meeting_update: "MEETING_UPDATE",
-  processing_complete: WebSocketEventTypes.PROCESSING_COMPLETE,
-};
-
-// Helper functions
-const getStandardEventType = (eventType) => {
-  return DEPRECATED_EVENT_NAMES[eventType] || eventType;
-};
-
-const logEventProcessing = (eventType, data, source = "unknown") => {
-  if (window.SCRUMBOT_CONFIG?.DEBUG) {
-    const isDeprecated = Object.keys(DEPRECATED_EVENT_NAMES).includes(
-      eventType,
-    );
-    const standardType = getStandardEventType(eventType);
-
-    console.log(`[WebSocket Event] ${source}:`, {
-      eventType,
-      standardType: isDeprecated ? standardType : "N/A",
-      isDeprecated,
-      dataKeys: Object.keys(data || {}),
-      timestamp: new Date().toISOString(),
-    });
-
-    if (isDeprecated) {
-      console.warn(
-        `[WebSocket Event] DEPRECATED event type "${eventType}" used. Use "${standardType}" instead.`,
-      );
-    }
-  }
-};
+const getStandardEventType =
+  window.ScrumBotWebSocketConstants?.getStandardEventType ||
+  ((eventType) => eventType);
+const logEventProcessing =
+  window.ScrumBotWebSocketConstants?.logEventProcessing || (() => {});
 
 class WebSocketClient {
   constructor() {
