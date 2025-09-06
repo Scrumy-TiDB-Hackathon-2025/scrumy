@@ -299,6 +299,12 @@ CORRECTED_OAUTH_IMPLEMENTATION_STRATEGY.md
 # Debug and test files
 ai_processing/pipeline_logs/
 logsfromserverandchrome.txt
+logsfromserverandchrome.logs
 chrome_extension/test-audio-direct.html
 *.log
 *.jsonl
+
+# Test environment files (never commit)
+ai_processing/.env.test
+**/.env.test
+**/test.env

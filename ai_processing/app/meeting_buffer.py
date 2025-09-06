@@ -264,10 +264,19 @@ class BatchProcessor:
             import json
             try:
                 result = json.loads(response)
+                print(f"✅ Successfully parsed Groq JSON response")
                 return result
-            except json.JSONDecodeError:
-                logger.warning("Failed to parse Groq response as JSON")
-                return {}
+            except json.JSONDecodeError as e:
+                print(f"❌ Failed to parse Groq response as JSON: {e}")
+                print(f"📝 Raw response: {response[:200]}...")
+                
+                # Return a valid fallback response
+                return {
+                    "error": "JSON parsing failed",
+                    "raw_response": response[:500],  # First 500 chars for debugging
+                    "speakers": [],
+                    "analysis": "Could not parse AI response"
+                }
                 
         except Exception as e:
             logger.error(f"Batch processing error: {e}")
