@@ -49,7 +49,7 @@ class AudioProcessor:
                 # Analyze audio before processing
                 audio_stats = await self._analyze_audio_file(temp_path)
                 print(f"🎵 Audio Stats: {audio_stats}")
-                
+
                 # Skip processing if clearly silence
                 if audio_stats.get('is_likely_silence', False):
                     print("⚠️ Skipping Whisper processing - audio appears to be silence")
@@ -63,7 +63,7 @@ class AudioProcessor:
 
                 # Run enhanced Whisper transcription
                 transcript = await self._transcribe_audio_enhanced(temp_path)
-                
+
                 # Log processing result
                 if transcript and transcript not in ['[BLANK_AUDIO]', '[SILENCE_DETECTED]']:
                     print(f"✅ Transcription successful: '{transcript[:50]}{'...' if len(transcript) > 50 else ''}'")
@@ -104,7 +104,7 @@ class AudioProcessor:
                 wav_file.setsampwidth(sample_width)
                 wav_file.setframerate(sample_rate)
                 wav_file.writeframes(audio_data)
-                
+
             # Log audio file details
             duration_ms = (len(audio_data) / (sample_rate * channels * sample_width)) * 1000
             print(f"📁 Created WAV: {output_path} ({duration_ms:.1f}ms, {len(audio_data)} bytes)")
@@ -120,23 +120,23 @@ class AudioProcessor:
         try:
             import wave
             import numpy as np
-            
+
             with wave.open(audio_path, 'rb') as wav_file:
                 sample_rate = wav_file.getframerate()
                 frames = wav_file.readframes(-1)
                 audio_data = np.frombuffer(frames, dtype=np.int16)
-                
+
                 if len(audio_data) == 0:
                     return {'is_likely_silence': True, 'error': 'No audio data'}
-                
+
                 # Calculate audio statistics
                 max_amplitude = np.max(np.abs(audio_data))
                 rms = np.sqrt(np.mean(audio_data.astype(np.float64) ** 2))
                 duration = len(audio_data) / sample_rate
-                
-                # Determine if likely silence
-                is_likely_silence = max_amplitude < 100  # Very low threshold for 16-bit audio
-                
+
+                # Determine if likely silence (improved thresholds)
+                is_likely_silence = max_amplitude < 500 or rms < 50  # Better thresholds for 16-bit audio
+
                 return {
                     'sample_rate': sample_rate,
                     'duration': duration,
@@ -145,7 +145,7 @@ class AudioProcessor:
                     'is_likely_silence': is_likely_silence,
                     'samples': len(audio_data)
                 }
-                
+
         except Exception as e:
             logger.error(f"Audio analysis error: {e}")
             return {'is_likely_silence': False, 'error': str(e)}
@@ -153,7 +153,7 @@ class AudioProcessor:
     async def _transcribe_audio_enhanced(self, audio_path: str) -> str:
         """Enhanced Whisper transcription with better parameters"""
         try:
-            # Enhanced Whisper command with better parameters
+            # Enhanced Whisper command with optimized parameters for meeting transcription
             cmd = [
                 self.whisper_executable,
                 '-m', self.whisper_model_path,
@@ -162,12 +162,14 @@ class AudioProcessor:
                 '--language', 'en',
                 '--threads', '4',
                 '--processors', '1',
-                '--no-timestamps',  # Remove timestamps for cleaner output
-                '--max-len', '0',   # No length limit
-                '--word-thold', '0.01',  # Lower word threshold
-                '--entropy-thold', '2.40',  # Lower entropy threshold for better detection
+                '--word-thold', '0.4',  # Higher word threshold for better accuracy
+                '--entropy-thold', '2.8',  # Higher entropy threshold to reduce hallucinations
+                '--logprob-thold', '-1.0',  # Better probability threshold
+                '--no-fallback',  # Prevent fallback to less accurate models
+                '--suppress-blank',  # Suppress blank outputs
+                '--suppress-non-speech-tokens',  # Reduce music/noise detection
             ]
-            
+
             print(f"🤖 Running Enhanced Whisper: {' '.join(cmd)}")
 
             process = await asyncio.create_subprocess_exec(
@@ -177,7 +179,7 @@ class AudioProcessor:
             )
 
             stdout, stderr = await process.communicate()
-            
+
             print(f"🤖 Whisper return code: {process.returncode}")
             print(f"🤖 Whisper stdout: '{stdout.decode('utf-8').strip()}'")
             if stderr:
@@ -192,14 +194,21 @@ class AudioProcessor:
                         with open(output_file, 'r') as f:
                             result = f.read().strip()
                         os.unlink(output_file)  # Clean up
-                
-                # Clean the output
+
+                # Clean and enhance the output
                 if result:
-                    # Remove timestamp patterns
+                    # Remove timestamp patterns and clean text
                     import re
                     result = re.sub(r'\[[\d:.\s\->]+\]\s*', '', result)
+                    result = result.replace('[MUSIC PLAYING]', '')
+                    result = result.replace('[BLANK_AUDIO]', '')
                     result = result.strip()
-                    
+
+                    # Skip very short or nonsensical results
+                    if len(result) < 3 or result.lower() in ['and', 'uh', 'um', 'eh', 'ah']:
+                        result = '[SILENCE_DETECTED]'
+                    result = result.strip()
+
                     if result and result != '[BLANK_AUDIO]':
                         return result
                     else:
@@ -234,14 +243,14 @@ class MeetingSession:
 
         # Initialize buffer system immediately (no AI dependency)
         self.buffer = MeetingBuffer(meeting_id)
-        
+
         # Lazy AI initialization - only created when needed
         self._ai_processor = None
         self._speaker_identifier = None
         self._meeting_summarizer = None
         self._task_extractor = None
         self._batch_processor = None
-    
+
     def _ensure_ai_components(self):
         """Lazy initialization of AI components"""
         if self._ai_processor is None:
@@ -250,27 +259,27 @@ class MeetingSession:
             self._meeting_summarizer = MeetingSummarizer(self._ai_processor)
             self._task_extractor = TaskExtractor(self._ai_processor)
             self._batch_processor = BatchProcessor(self._ai_processor)
-    
+
     @property
     def ai_processor(self):
         self._ensure_ai_components()
         return self._ai_processor
-    
+
     @property
     def speaker_identifier(self):
         self._ensure_ai_components()
         return self._speaker_identifier
-    
+
     @property
     def meeting_summarizer(self):
         self._ensure_ai_components()
         return self._meeting_summarizer
-    
+
     @property
     def task_extractor(self):
         self._ensure_ai_components()
         return self._task_extractor
-    
+
     @property
     def batch_processor(self):
         self._ensure_ai_components()
@@ -367,15 +376,15 @@ class WebSocketManager:
         self.audio_processor = AudioProcessor()
         self.audio_buffer_manager = AudioBufferManager()
         self.batch_processor = None  # Initialized when first session is created
-        
 
-    
+
+
     async def _process_timeout_buffer(self, session_id: str, buffer):
         """Process buffer due to timeout"""
         try:
             duration = buffer.get_duration_ms()
             print(f"🎤 Processing timeout buffer ({duration:.1f}ms) for session {session_id}")
-            
+
             # Create WAV file from buffered audio
             wav_path = buffer.create_wav_file()
             if wav_path:
@@ -385,24 +394,24 @@ class WebSocketManager:
                         buffer.get_buffered_audio(), {}
                     )
                     print(f"📝 Timeout result: '{transcription_result.get('text', 'EMPTY')}'")
-                    
+
                     # Send result to all connections for this session
                     await self._broadcast_transcription_result(session_id, transcription_result)
-                    
+
                     # Clean up temp file
                     os.unlink(wav_path)
-                    
+
                 except Exception as e:
                     print(f"❌ Timeout processing failed: {e}")
                     if os.path.exists(wav_path):
                         os.unlink(wav_path)
-                
+
                 # Clear buffer after processing
                 buffer.clear()
-                
+
         except Exception as e:
             logger.error(f"Error processing timeout buffer: {e}")
-    
+
     async def _broadcast_transcription_result(self, session_id: str, transcription_result: Dict):
         """Broadcast transcription result to all connections for a session"""
         try:
@@ -412,7 +421,7 @@ class WebSocketManager:
                 session = connection_info.get('meeting_session')
                 if session and session.meeting_id == session_id:
                     target_connections.append(websocket)
-            
+
             # Send to all connections
             for websocket in target_connections:
                 try:
@@ -428,7 +437,7 @@ class WebSocketManager:
                     })
                 except Exception as e:
                     logger.error(f"Error sending timeout result to connection: {e}")
-                    
+
         except Exception as e:
             logger.error(f"Error broadcasting timeout result: {e}")
 
@@ -547,20 +556,20 @@ class WebSocketManager:
             # Add to audio buffer and check if ready for processing
             audio_buffer = self.audio_buffer_manager.get_buffer(meeting_id)
             ready_for_processing = audio_buffer.add_chunk(audio_bytes, timestamp, metadata)
-            
+
             transcription_result = {'text': '', 'confidence': 0.0, 'timestamp': datetime.now().isoformat()}
-            
+
             # Calculate current samples for later use
             bytes_per_sample = audio_buffer.sample_width * audio_buffer.channels
             current_samples = len(audio_buffer.buffer) // bytes_per_sample
-            
+
             if ready_for_processing:
                 # Check if this is buffer full or timeout
                 buffer_full = current_samples >= audio_buffer.target_samples
-                
+
                 if buffer_full:
                     print(f"🎤 Buffer full ({audio_buffer.get_duration_ms():.1f}ms) - processing with Whisper...")
-                    
+
                     # Create WAV file from buffered audio
                     wav_path = audio_buffer.create_wav_file()
                     if wav_path:
@@ -570,15 +579,15 @@ class WebSocketManager:
                                 audio_buffer.get_buffered_audio(), metadata
                             )
                             print(f"📝 Whisper result: '{transcription_result.get('text', 'EMPTY')}'")
-                            
+
                             # Clean up temp file
                             os.unlink(wav_path)
-                            
+
                         except Exception as e:
                             print(f"❌ Whisper processing failed: {e}")
                             if os.path.exists(wav_path):
                                 os.unlink(wav_path)
-                        
+
                         # Clear buffer after processing
                         audio_buffer.clear()
                     else:
@@ -587,10 +596,10 @@ class WebSocketManager:
                     # Timeout scenario - don't process here, let background task handle it
                     print(f"⏰ Timeout ready - leaving for background task")
                     ready_for_processing = False
-            
+
             if not ready_for_processing:
                 print(f"🔄 Buffering audio chunk ({audio_buffer.get_duration_ms():.1f}ms/{audio_buffer.target_duration_ms}ms)")
-            
+
             # Log transcript chunk (if logger available)
             if transcription_result.get('text') and session.buffer.logger:
                 session.buffer.logger.log_transcript_chunk(
@@ -603,19 +612,33 @@ class WebSocketManager:
 
             # Add to buffer (no immediate AI processing)
             if transcription_result.get('text'):
+                # Check for duplicate transcript before processing
+                transcript_text = transcription_result['text'].strip()
+
+                # Skip if duplicate or empty
+                if session.buffer._is_duplicate_transcript(transcript_text):
+                    print(f"⚠️ Skipping duplicate transcript: '{transcript_text[:50]}...'")
+                    transcription_result['text'] = ''  # Clear duplicate
+                    return  # Skip processing this duplicate
+
+                # Add to recent transcripts for future deduplication
+                session.buffer.recent_transcripts.append(transcript_text.lower())
+                if len(session.buffer.recent_transcripts) > session.buffer.max_recent_transcripts:
+                    session.buffer.recent_transcripts.pop(0)  # Remove oldest
+
                 # Create transcript chunk for buffer
                 chunk = TranscriptChunk(
                     timestamp_start=len(session.transcript_chunks) * 5.0,  # Estimate based on chunk index
                     timestamp_end=(len(session.transcript_chunks) + 1) * 5.0,
-                    raw_text=transcription_result['text'],
+                    raw_text=transcript_text,
                     participants_present=participants,
                     confidence=transcription_result.get('confidence', 0.85),
                     chunk_index=len(session.transcript_chunks)
                 )
-                
+
                 # Add to buffer (no AI call yet)
                 session.buffer.add_chunk(chunk)
-                
+
                 # Check if we should process batch (only if AI is available)
                 if session.buffer.should_process_batch():
                     try:
@@ -624,20 +647,20 @@ class WebSocketManager:
                     except Exception as e:
                         logger.warning(f"Batch processing failed (AI unavailable): {e}")
                         # Continue without AI processing
-                
+
                 # Use fallback speaker identification for immediate response (no AI)
                 speaker_name = session.buffer._fallback_speaker_identification(chunk)
                 transcription_result['speakers'] = [{'name': speaker_name}] if speaker_name != 'Unknown' else []
 
             # Send transcription result if we processed audio (buffer full) or have text
-            should_send_result = (ready_for_processing or 
-                                transcription_result.get('text') or 
+            should_send_result = (ready_for_processing or
+                                transcription_result.get('text') or
                                 (current_samples >= audio_buffer.target_samples * 0.98))
-            
+
             if should_send_result:
                 speakers = transcription_result.get('speakers', [])
                 speaker_name = speakers[0].get('name', 'Unknown') if speakers else 'Unknown'
-                
+
                 response_data = {
                     'text': transcription_result.get('text', ''),
                     'confidence': transcription_result.get('confidence', 0.0),
@@ -713,7 +736,7 @@ class WebSocketManager:
             })
         elif event_type in ['ended', 'meeting_ended']:
             print(f"\n🏁 Meeting ended - starting final processing...")
-            
+
             # Send initial processing status
             await self.send_message(websocket, {
                 'type': 'PROCESSING_STATUS',
@@ -722,14 +745,14 @@ class WebSocketManager:
                     'stage': 'initialization'
                 }
             })
-            
+
             # Process final summary if we have a session
             connection_info = self.active_connections.get(websocket)
             if connection_info and connection_info.get('meeting_session'):
                 session = connection_info['meeting_session']
                 print(f"📋 Processing meeting: {session.meeting_id}")
                 print(f"👥 Participants: {', '.join(session.participants)}")
-                
+
                 # Process any remaining buffered audio
                 audio_buffer = self.audio_buffer_manager.get_buffer(session.meeting_id)
                 if len(audio_buffer.buffer) > 0:
@@ -740,7 +763,7 @@ class WebSocketManager:
                             'stage': 'final_audio'
                         }
                     })
-                    
+
                     print(f"🎵 Processing final buffered audio ({audio_buffer.get_duration_ms():.1f}ms)...")
                     wav_path = audio_buffer.create_wav_file()
                     if wav_path:
@@ -756,7 +779,7 @@ class WebSocketManager:
                             print(f"❌ Final audio processing failed: {e}")
                             if os.path.exists(wav_path):
                                 os.unlink(wav_path)
-                
+
                 # Send processing status before summary generation
                 await self.send_message(websocket, {
                     'type': 'PROCESSING_STATUS',
@@ -765,9 +788,9 @@ class WebSocketManager:
                         'stage': 'summary_generation'
                     }
                 })
-                
+
                 await self._generate_meeting_summary(websocket, session)
-                
+
                 # Send completion signal
                 await self.send_message(websocket, {
                     'type': 'PROCESSING_COMPLETE',
@@ -777,7 +800,7 @@ class WebSocketManager:
                         'meeting_id': session.meeting_id
                     }
                 })
-                
+
                 # Clean up audio buffer
                 self.audio_buffer_manager.remove_buffer(session.meeting_id)
                 print(f"🧹 Cleaned up audio buffer for {session.meeting_id}")
@@ -797,7 +820,7 @@ class WebSocketManager:
         """Generate and send meeting summary (only if AI is available)"""
         try:
             print(f"🎯 Starting meeting summary generation for {session.meeting_id}")
-            
+
             if not session.cumulative_transcript.strip():
                 print(f"⚠️ No transcript content available - skipping summary")
                 logger.warning("No transcript available for summary")
@@ -808,10 +831,10 @@ class WebSocketManager:
             # Try to generate AI summary and tasks (may fail if no API key)
             summary = {}
             tasks = {}
-            
+
             try:
                 print(f"🤖 Starting AI processing...")
-                
+
                 # Generate comprehensive summary
                 print(f"📋 Generating meeting summary...")
                 summary = await session.meeting_summarizer.generate_comprehensive_summary(
@@ -833,10 +856,10 @@ class WebSocketManager:
                 )
                 task_count = len(tasks.get('tasks', []))
                 print(f"✅ Tasks extracted: {task_count} action items found")
-                
+
                 print(f"🎉 AI processing completed successfully!")
                 logger.info(f"AI processing completed for meeting {session.meeting_id}")
-                
+
             except Exception as ai_error:
                 print(f"⚠️ AI processing failed: {str(ai_error)}")
                 print(f"📝 Creating basic summary without AI...")
@@ -856,9 +879,9 @@ class WebSocketManager:
                 try:
                     print(f"\n🔗 Starting integration processing...")
                     print(f"📋 Creating {task_count} tasks in external systems...")
-                    
+
                     participant_objects = session.get_participant_data_objects()
-                    
+
                     # Add pipeline logger to meeting context for integration logging
                     meeting_context_with_logger = {
                         'meeting_id': session.meeting_id,
@@ -867,7 +890,7 @@ class WebSocketManager:
                         'summary': summary,
                         'pipeline_logger': session.buffer.logger
                     }
-                    
+
                     await notify_meeting_processed(
                         meeting_id=session.meeting_id,
                         meeting_title=f"Meeting {session.meeting_id}",
@@ -880,17 +903,17 @@ class WebSocketManager:
                         speakers_data=[],
                         meeting_context=meeting_context_with_logger
                     )
-                    
+
                     print(f"✅ Integration processing completed!")
                     print(f"📋 Tasks created in: Notion, Slack, and other configured systems")
                     logger.info(f"Notified integration systems for meeting {session.meeting_id}")
-                    
+
                 except Exception as e:
                     print(f"❌ Integration processing failed: {str(e)}")
                     logger.warning(f"Failed to notify integration systems: {e}")
             else:
                 print(f"ℹ️ No tasks found - skipping integration processing")
-            
+
             # Always log pipeline summary
             try:
                 session.buffer.logger.log_pipeline_summary({
@@ -944,14 +967,14 @@ websocket_manager = WebSocketManager()
 async def websocket_endpoint(websocket: WebSocket):
     """Main WebSocket endpoint handler with full message routing"""
     print(f"🔌 Starting WebSocket endpoint handler")
-    
+
     client_info = {
         'client_host': websocket.client.host if websocket.client else 'unknown',
         'client_port': websocket.client.port if websocket.client else 0
     }
-    
+
     print(f"🔌 Client info: {client_info}")
-    
+
     try:
         # Connect using WebSocketManager (sends HANDSHAKE_ACK automatically)
         await websocket_manager.connect(websocket, client_info)
@@ -961,11 +984,11 @@ async def websocket_endpoint(websocket: WebSocket):
             try:
                 # Receive message from client
                 data = await websocket.receive_text()
-                
+
                 if not data or data.strip() == "":
                     print(f"⚠️  Received empty message, skipping...")
                     continue
-                    
+
                 message = json.loads(data)
                 message_type = message.get('type')
                 print(f"📬 Received {message_type}: {message}")
@@ -983,7 +1006,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         'type': 'ERROR',
                         'error': f"Unknown message type: {message_type}"
                     })
-                    
+
             except json.JSONDecodeError as e:
                 print(f"❌ JSON decode error: {e} - Data: '{data}'")
                 await websocket_manager.send_message(websocket, {
@@ -1012,11 +1035,11 @@ async def start_server(host="0.0.0.0", port=8080):
     from fastapi import FastAPI
     from fastapi.middleware.cors import CORSMiddleware
     from contextlib import asynccontextmanager
-    
+
     # Load environment
     import os
     from dotenv import load_dotenv
-    
+
     # Load .env file
     env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
     if os.path.exists(env_path):
@@ -1024,7 +1047,7 @@ async def start_server(host="0.0.0.0", port=8080):
         print("✅ Loaded environment from .env")
     else:
         print("⚠️  No .env file found")
-    
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         # Startup
@@ -1034,14 +1057,14 @@ async def start_server(host="0.0.0.0", port=8080):
         # Shutdown
         print("🛑 Stopping background timeout checker...")
         await background_manager.stop()
-    
+
     print("🚀 Starting ScrumBot WebSocket Server...")
     print(f"📡 WebSocket endpoint: ws://{host}:{port}/ws")
     print(f"🏥 Health check: http://{host}:{port}/health")
-    
+
     # Create FastAPI app with lifespan
     app = FastAPI(title="ScrumBot WebSocket Server", lifespan=lifespan)
-    
+
     # Add CORS middleware with WebSocket support
     app.add_middleware(
         CORSMiddleware,
@@ -1051,23 +1074,23 @@ async def start_server(host="0.0.0.0", port=8080):
         allow_headers=["*"],
         expose_headers=["*"]
     )
-    
+
     # Add root endpoint for testing
     @app.get("/")
     async def root():
         return {"message": "ScrumBot WebSocket Server", "websocket": "/ws"}
-    
+
     # Health check endpoint
     @app.get("/health")
     async def health_check():
         return {"status": "healthy"}
-    
+
     # WebSocket endpoint with full message handling
     @app.websocket("/ws")
     async def websocket_route(websocket: WebSocket):
         print(f"🔌 WebSocket connection attempt from {websocket.client}")
         await websocket_endpoint(websocket)
-    
+
     # Start server
     config = uvicorn.Config(
         app=app,
