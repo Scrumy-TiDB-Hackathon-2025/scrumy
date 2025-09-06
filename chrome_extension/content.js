@@ -1,5 +1,51 @@
 console.log("🤖 ScrumBot extension loaded on:", window.location.href);
 
+// WebSocket Event Constants (inline for Chrome extension compatibility)
+const WebSocketEventTypes = {
+  HANDSHAKE: "HANDSHAKE",
+  HANDSHAKE_ACK: "HANDSHAKE_ACK",
+  TRANSCRIPTION_RESULT: "TRANSCRIPTION_RESULT",
+  MEETING_EVENT: "MEETING_EVENT",
+  PROCESSING_STATUS: "PROCESSING_STATUS",
+  PROCESSING_COMPLETE: "PROCESSING_COMPLETE",
+  ERROR: "ERROR",
+};
+
+// Deprecated event names mapping
+const DEPRECATED_EVENT_NAMES = {
+  transcription_result: WebSocketEventTypes.TRANSCRIPTION_RESULT,
+  meeting_update: "MEETING_UPDATE",
+  processing_complete: WebSocketEventTypes.PROCESSING_COMPLETE,
+};
+
+// Helper functions
+const getStandardEventType = (eventType) => {
+  return DEPRECATED_EVENT_NAMES[eventType] || eventType;
+};
+
+const logEventProcessing = (eventType, data, source = "unknown") => {
+  if (window.SCRUMBOT_CONFIG?.DEBUG) {
+    const isDeprecated = Object.keys(DEPRECATED_EVENT_NAMES).includes(
+      eventType,
+    );
+    const standardType = getStandardEventType(eventType);
+
+    console.log(`[WebSocket Event] ${source}:`, {
+      eventType,
+      standardType: isDeprecated ? standardType : "N/A",
+      isDeprecated,
+      dataKeys: Object.keys(data || {}),
+      timestamp: new Date().toISOString(),
+    });
+
+    if (isDeprecated) {
+      console.warn(
+        `[WebSocket Event] DEPRECATED event type "${eventType}" used. Use "${standardType}" instead.`,
+      );
+    }
+  }
+};
+
 // Wait for config to load
 if (typeof window.SCRUMBOT_CONFIG === "undefined") {
   console.error("❌ ScrumBot config not loaded");
@@ -824,7 +870,7 @@ function initializeWebSocket() {
       if (websocket.readyState === WebSocket.OPEN) {
         websocket.send(
           JSON.stringify({
-            type: "HANDSHAKE",
+            type: WebSocketEventTypes.HANDSHAKE,
             clientType: "chrome_extension",
             platform: currentPlatform,
             meetingUrl: window.location.href,
@@ -839,11 +885,14 @@ function initializeWebSocket() {
       const data = JSON.parse(event.data);
       console.log("📨 WebSocket message:", data);
 
-      // Handle different message types
-      if (
-        data.type === "transcription_result" ||
-        data.type === "TRANSCRIPTION_RESULT"
-      ) {
+      // Log event processing for debugging
+      logEventProcessing(data.type, data.data, "WebSocket");
+
+      // Normalize deprecated event types
+      const eventType = getStandardEventType(data.type);
+
+      // Handle different message types with standardized events
+      if (eventType === WebSocketEventTypes.TRANSCRIPTION_RESULT) {
         const transcriptText = data.data?.text || data.text || "EMPTY";
         console.log("📝 Transcription text:", transcriptText);
 
@@ -853,19 +902,17 @@ function initializeWebSocket() {
           data.data?.timestamp || new Date().toISOString(),
         );
 
+        // Handle transcription results and track processed chunks
+        handleTranscriptionResult(data);
+
+        // Also update UI
         handleTranscriptionUpdate(data);
       } else if (data.type === "meeting_processed") {
         handleMeetingProcessed(data);
-      } else if (data.type === "PROCESSING_STATUS") {
+      } else if (data.type === WebSocketEventTypes.PROCESSING_STATUS) {
         handleProcessingStatus(data);
-      } else if (data.type === "PROCESSING_COMPLETE") {
+      } else if (data.type === WebSocketEventTypes.PROCESSING_COMPLETE) {
         handleProcessingComplete(data);
-      } else if (
-        data.type === "transcription_result" ||
-        data.type === "TRANSCRIPTION_RESULT"
-      ) {
-        // Handle transcription results and track processed chunks
-        handleTranscriptionResult(data);
       }
     } catch (error) {
       console.error("❌ WebSocket message parse error:", error);

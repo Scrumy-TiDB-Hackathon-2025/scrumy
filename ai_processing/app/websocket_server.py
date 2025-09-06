@@ -9,6 +9,7 @@ import logging
 import websockets
 import tempfile
 import os
+import sys
 from typing import Dict, Set, Optional, List
 from datetime import datetime
 import wave
@@ -27,7 +28,41 @@ from app.background_tasks import background_manager
 import subprocess
 import time
 
+# Import WebSocket events constants and monitoring
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'shared'))
+try:
+    from websocket_events import WebSocketEventTypes, WebSocketEventData, WebSocketEventValidator
+    from websocket_event_monitor import monitor_event, get_monitoring_report
+except ImportError:
+    # Fallback if import fails
+    class WebSocketEventTypes:
+        TRANSCRIPTION_RESULT = "TRANSCRIPTION_RESULT"
+        HANDSHAKE_ACK = "HANDSHAKE_ACK"
+        ERROR = "ERROR"
+        MEETING_UPDATE = "MEETING_UPDATE"
+
+    class WebSocketEventData:
+        @staticmethod
+        def transcription_result(text, confidence, timestamp, speaker="Unknown", chunk_id=None, **kwargs):
+            return {"text": text, "confidence": confidence, "timestamp": timestamp, "speaker": speaker, "chunkId": chunk_id, **kwargs}
+
+    # Fallback monitoring functions
+    def monitor_event(event_type, data, source="unknown", session_id=None):
+        logger.debug(f"Event monitoring fallback: {event_type} from {source}")
+        return {"is_duplicate": False, "is_deprecated": False, "validation_errors": [], "recommendations": []}
+
+    def get_monitoring_report():
+        return {"error": "Event monitoring not available"}
+
 logger = logging.getLogger(__name__)
+
+def get_websocket_monitoring_report():
+    """Get monitoring report for WebSocket events."""
+    try:
+        return get_monitoring_report()
+    except Exception as e:
+        logger.error(f"Failed to get monitoring report: {e}")
+        return {"error": str(e)}
 
 class AudioProcessor:
     """Handle audio chunk processing and transcription"""
@@ -424,15 +459,25 @@ class WebSocketManager:
             # Send to all connections
             for websocket in target_connections:
                 try:
+                    timeout_data = WebSocketEventData.transcription_result(
+                        text=transcription_result.get('text', ''),
+                        confidence=transcription_result.get('confidence', 0.0),
+                        timestamp=transcription_result.get('timestamp'),
+                        speaker='Unknown',
+                        trigger_reason='timeout'
+                    )
+
+                    # Monitor timeout transcription events
+                    monitor_event(
+                        WebSocketEventTypes.TRANSCRIPTION_RESULT,
+                        timeout_data,
+                        source="websocket_server_timeout",
+                        session_id=session_id
+                    )
+
                     await self.send_message(websocket, {
-                        'type': 'transcription_result',
-                        'data': {
-                            'text': transcription_result.get('text', ''),
-                            'confidence': transcription_result.get('confidence', 0.0),
-                            'timestamp': transcription_result.get('timestamp'),
-                            'speaker': 'Unknown',
-                            'trigger_reason': 'timeout'
-                        }
+                        'type': WebSocketEventTypes.TRANSCRIPTION_RESULT,
+                        'data': timeout_data
                     })
                 except Exception as e:
                     logger.error(f"Error sending timeout result to connection: {e}")
@@ -671,26 +716,41 @@ class WebSocketManager:
                     'isFlushing': is_flushing
                 }
 
-                # Send both formats for compatibility
-                await self.send_message(websocket, {
-                    'type': 'transcription_result',  # Shared contract format
-                    'data': response_data
-                })
+                # Prepare transcription data
+                transcription_data = WebSocketEventData.transcription_result(
+                    text=response_data.get('text', ''),
+                    confidence=response_data.get('confidence', 0.0),
+                    timestamp=response_data.get('timestamp'),
+                    speaker=response_data.get('speaker', 'Unknown'),
+                    chunk_id=response_data.get('chunkId'),
+                    is_final=False,
+                    # Extended data for Chrome extension compatibility
+                    speakers=transcription_result.get('speakers', []),
+                    meetingId=meeting_id,
+                    speaker_id=self._get_speaker_id_from_name(
+                        response_data.get('speaker', 'Unknown'),
+                        session.participant_data
+                    ) if session.participant_data else None,
+                    speaker_confidence=transcription_result.get('speaker_confidence', 0.0),
+                    isFlushing=response_data.get('isFlushing', False)
+                )
 
-                # Also send extended format for Chrome extension
+                # Monitor the event for duplicates and validation
+                monitoring_result = monitor_event(
+                    WebSocketEventTypes.TRANSCRIPTION_RESULT,
+                    transcription_data,
+                    source="websocket_server",
+                    session_id=meeting_id
+                )
+
+                # Log monitoring results if issues detected
+                if monitoring_result.get('is_duplicate') or monitoring_result.get('is_deprecated') or monitoring_result.get('validation_errors'):
+                    logger.warning(f"Event monitoring detected issues: {monitoring_result.get('recommendations', [])}")
+
+                # Send standardized TRANSCRIPTION_RESULT event (no more duplicates)
                 await self.send_message(websocket, {
-                    'type': 'TRANSCRIPTION_RESULT',
-                    'data': {
-                        **response_data,
-                        'speakers': transcription_result.get('speakers', []),
-                        'meetingId': meeting_id,
-                        'chunkId': len(session.transcript_chunks),
-                        'speaker_id': self._get_speaker_id_from_name(
-                            response_data.get('speaker', 'Unknown'),
-                            session.participant_data
-                        ) if session.participant_data else None,
-                        'speaker_confidence': transcription_result.get('speaker_confidence', 0.0)
-                    }
+                    'type': WebSocketEventTypes.TRANSCRIPTION_RESULT,
+                    'data': transcription_data
                 })
 
                 # Broadcast to other clients in the same meeting (only if we have transcription)
@@ -793,14 +853,26 @@ class WebSocketManager:
                                 session.add_transcript_chunk(final_result)
                                 print(f"✅ Final audio processed: '{final_result['text'][:50]}...'")
 
+                                final_transcription_data = WebSocketEventData.transcription_result(
+                                    text=final_result['text'],
+                                    timestamp=final_result.get('timestamp', datetime.now().isoformat()),
+                                    speaker='Unknown',
+                                    confidence=final_result.get('confidence', 0.0),
+                                    is_final=True
+                                )
+
+                                # Monitor final transcription event
+                                monitor_event(
+                                    WebSocketEventTypes.TRANSCRIPTION_RESULT,
+                                    final_transcription_data,
+                                    source="websocket_server_final",
+                                    session_id=meeting_id
+                                )
+
                                 # Send transcription result with processing complete flag
                                 await self.send_message(websocket, {
-                                    'type': 'TRANSCRIPTION_RESULT',
-                                    'data': {
-                                        'text': final_result['text'],
-                                        'timestamp': final_result.get('timestamp', datetime.now().isoformat()),
-                                        'is_final': True
-                                    }
+                                    'type': WebSocketEventTypes.TRANSCRIPTION_RESULT,
+                                    'data': final_transcription_data
                                 })
                             os.unlink(wav_path)
                         except Exception as e:
