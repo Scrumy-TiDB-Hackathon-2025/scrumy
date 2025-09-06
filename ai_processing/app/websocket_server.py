@@ -166,8 +166,7 @@ class AudioProcessor:
                 '--entropy-thold', '2.8',  # Higher entropy threshold to reduce hallucinations
                 '--logprob-thold', '-1.0',  # Better probability threshold
                 '--no-fallback',  # Prevent fallback to less accurate models
-                '--suppress-blank',  # Suppress blank outputs
-                '--suppress-non-speech-tokens',  # Reduce music/noise detection
+                '--suppress-nst',  # Suppress non-speech tokens
             ]
 
             print(f"🤖 Running Enhanced Whisper: {' '.join(cmd)}")

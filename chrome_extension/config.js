@@ -34,8 +34,8 @@ const CONFIGS = {
 
   prod: {
     // Production - Real backend services
-    BACKEND_URL: 'https://cef5389110fa.ngrok-free.app',
-    WEBSOCKET_URL: 'wss://a81c258962a4.ngrok-free.app/ws',
+    BACKEND_URL: 'https://d42d52487c88.ngrok-free.app',
+    WEBSOCKET_URL: 'wss://30831910dddf.ngrok-free.app/ws',
     FRONTEND_URL: 'https://scrumy.vercel.app',
 
     // Production API Endpoints
