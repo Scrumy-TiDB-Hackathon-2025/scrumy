@@ -761,13 +761,17 @@ function initializeWebSocket() {
   
   websocket.onopen = () => {
     console.log('✅ WebSocket connected');
-    // Send handshake
-    websocket.send(JSON.stringify({
-      type: 'HANDSHAKE',
-      clientType: 'chrome_extension',
-      platform: currentPlatform,
-      meetingUrl: window.location.href
-    }));
+    // Wait for connection to be fully ready before sending
+    setTimeout(() => {
+      if (websocket.readyState === WebSocket.OPEN) {
+        websocket.send(JSON.stringify({
+          type: 'HANDSHAKE',
+          clientType: 'chrome_extension',
+          platform: currentPlatform,
+          meetingUrl: window.location.href
+        }));
+      }
+    }, 100);
   };
   
   websocket.onmessage = (event) => {
@@ -986,7 +990,7 @@ function downloadTranscript() {
   
   const fullContent = header + transcriptContent;
   
-  // Create and download file
+  // Create and download transcript file
   const blob = new Blob([fullContent], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -998,7 +1002,24 @@ function downloadTranscript() {
   URL.revokeObjectURL(url);
   
   console.log(`💾 Downloaded transcript with ${transcriptLog.length} segments`);
-  alert(`✅ Transcript downloaded!\n${transcriptLog.length} segments saved for validation.`);
+  
+  // Also trigger audio file download if available
+  if (window.scrumBotAudioCapture && window.scrumBotAudioCapture.recordedPCMData && window.scrumBotAudioCapture.recordedPCMData.length > 0) {
+    console.log('📥 Generating enhanced audio file download...');
+    const audioFilename = window.scrumBotAudioCapture.generateWAVFile();
+    alert(`✅ Files downloaded!\n• Transcript: ${transcriptLog.length} segments\n• Audio: ${audioFilename}\n\nBoth files saved for validation.`);
+  } else {
+    console.log('⚠️ No enhanced audio data available - checking helper tab audio...');
+    // Try to get audio from helper tab if available
+    if (helperTabId) {
+      chrome.runtime.sendMessage({
+        type: 'MEETING_TO_HELPER',
+        messageType: 'DOWNLOAD_AUDIO',
+        targetTabId: helperTabId
+      });
+    }
+    alert(`✅ Transcript downloaded!\n${transcriptLog.length} segments saved for validation.\n\n⚠️ Audio file may be available from capture tab.`);
+  }
 }
 
 // Auto-refresh connection status

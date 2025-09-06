@@ -1,0 +1,375 @@
+# ScrumBot - AI-Powered Meeting Assistant LLM Context
+
+## Project Overview
+
+ScrumBot is an AI-powered meeting assistant built for the TiDB Hackathon 2025. It extends the Meetily project with TiDB Serverless integration, Chrome extension support, and Model Context Protocol (MCP) integration for seamless task management.
+
+### Core Capabilities
+- Real-time audio capture from video calls (Google Meet, Zoom, Teams)
+- AI-powered transcription using Whisper.cpp
+- Speaker identification and meeting summarization
+- Automatic task creation in Notion, Slack, and ClickUp
+- TiDB Serverless database for scalable data storage
+- Chrome extension for direct browser integration
+- WebSocket-based real-time communication
+
+## Architecture Overview
+
+```
+Chrome Extension → WebSocket → AI Processing → Integration → External APIs
+     ↓               ↓            ↓              ↓           ↓
+  Audio Capture → Transcription → Task Extract → Database → Notion/Slack/ClickUp
+```
+
+### Key Components
+1. **AI Processing Backend** (FastAPI + Python)
+2. **Chrome Extension** (JavaScript)
+3. **Integration System** (Node.js + Python)
+4. **Frontend Dashboard** (Next.js)
+5. **TiDB Database** (MySQL-compatible)
+
+## Project Structure
+
+```
+scrumy/
+├── ai_processing/           # Core AI processing backend
+│   ├── app/                # FastAPI application modules
+│   ├── whisper.cpp/        # Whisper transcription engine
+│   ├── requirements.txt    # Python dependencies
+│   └── start_backend.py    # Main entry point
+├── chrome_extension/       # Browser extension
+│   ├── manifest.json      # Extension configuration
+│   ├── content.js         # Meeting detection and audio capture
+│   └── popup.html         # Extension UI
+├── integration/           # External API integrations
+│   ├── app/              # Integration modules
+│   ├── requirements.txt  # Python dependencies
+│   └── server.js         # Integration server (if exists)
+├── frontend_dashboard/    # Next.js web interface
+│   ├── app/              # Next.js app directory
+│   ├── components/       # React components
+│   └── package.json      # Node.js dependencies
+├── deployment/           # EC2 deployment scripts
+└── shared/              # Shared configuration
+    └── .env.example     # Environment template
+```
+
+## Core Technologies
+
+### Backend Stack
+- **FastAPI**: Web framework for AI processing API
+- **Whisper.cpp**: Local speech-to-text processing
+- **Groq API**: AI processing for summarization and task extraction
+- **TiDB Serverless**: Distributed SQL database
+- **WebSockets**: Real-time communication
+- **Python 3.10+**: Core language
+
+### Frontend Stack
+- **Next.js 14**: React framework
+- **Tailwind CSS**: Styling
+- **Ant Design**: UI components
+- **WebSocket Client**: Real-time updates
+
+### Chrome Extension
+- **Manifest V3**: Modern extension format
+- **Content Scripts**: Meeting page integration
+- **Background Service Worker**: Extension lifecycle
+- **Tab Capture API**: Audio recording
+
+## Key Files and Their Purpose
+
+### AI Processing Backend (`ai_processing/`)
+- `app/main.py`: FastAPI application with all endpoints
+- `app/websocket_server.py`: WebSocket server for real-time communication
+- `app/ai_processor.py`: Groq API integration for AI processing
+- `app/speaker_identifier.py`: Speaker identification logic
+- `app/meeting_summarizer.py`: Meeting summarization
+- `app/task_extractor.py`: Task extraction from transcripts
+- `app/tidb_database.py`: TiDB database implementation
+- `app/sqlite_database.py`: SQLite fallback implementation
+- `app/database_interface.py`: Abstract database interface
+- `app/integration_adapter.py`: External API integration adapter
+
+### Chrome Extension (`chrome_extension/`)
+- `manifest.json`: Extension configuration and permissions
+- `content.js`: Main content script for meeting pages
+- `core/audiocapture.js`: Audio capture functionality
+- `core/meetingdetector.js`: Meeting detection logic
+- `services/websocketclient.js`: WebSocket communication
+- `popup.html/js`: Extension popup interface
+
+### Integration System (`integration/`)
+- `app/integrations.py`: Core API integrations (Notion, Slack, ClickUp)
+- `app/tools.py`: Tools registry for AI function calling
+- `app/ai_agent.py`: AI agent with function calling capabilities
+- `app/tidb_manager.py`: TiDB operations for integration data
+
+## Environment Configuration
+
+### Required Environment Variables
+```bash
+# TiDB Database (Required)
+TIDB_CONNECTION_STRING=mysql://username:password@gateway01.us-west-2.prod.aws.tidbcloud.com:4000/test
+
+# AI Provider (Choose one)
+GROQ_API_KEY=gsk_your_groq_api_key_here
+OPENAI_API_KEY=your_openai_key
+ANTHROPIC_API_KEY=your_claude_key
+
+# Integration Platforms (Optional)
+NOTION_TOKEN=secret_your_notion_integration_token
+NOTION_DATABASE_ID=your_database_id_here
+SLACK_BOT_TOKEN=xoxb-your-slack-bot-token
+CLICKUP_TOKEN=pk_your_clickup_api_token
+
+# Server Configuration
+HOST=0.0.0.0
+PORT=5167
+ENVIRONMENT=development
+DEBUG=true
+```
+
+## Database Schema (TiDB)
+
+### Core Tables
+```sql
+-- Meetings with metadata
+CREATE TABLE meetings (
+    id VARCHAR(255) PRIMARY KEY,
+    title VARCHAR(500) NOT NULL,
+    platform VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Meeting transcripts
+CREATE TABLE transcripts (
+    id VARCHAR(255) PRIMARY KEY,
+    meeting_id VARCHAR(255) NOT NULL,
+    transcript TEXT NOT NULL,
+    timestamp VARCHAR(255) NOT NULL,
+    summary TEXT DEFAULT '',
+    action_items TEXT DEFAULT '',
+    key_points TEXT DEFAULT '',
+    FOREIGN KEY (meeting_id) REFERENCES meetings(id) ON DELETE CASCADE
+);
+
+-- AI processing results
+CREATE TABLE summary_processes (
+    meeting_id VARCHAR(255) PRIMARY KEY,
+    status VARCHAR(50) NOT NULL DEFAULT 'processing',
+    result TEXT,
+    error TEXT,
+    start_time VARCHAR(255),
+    end_time VARCHAR(255),
+    FOREIGN KEY (meeting_id) REFERENCES meetings(id) ON DELETE CASCADE
+);
+
+-- Meeting participants
+CREATE TABLE participants (
+    id VARCHAR(255) PRIMARY KEY,
+    meeting_id VARCHAR(255) NOT NULL,
+    participant_id VARCHAR(255) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    platform_id VARCHAR(255) NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'active',
+    join_time VARCHAR(255) NOT NULL,
+    is_host BOOLEAN NOT NULL DEFAULT FALSE,
+    FOREIGN KEY (meeting_id) REFERENCES meetings(id) ON DELETE CASCADE
+);
+```
+
+## API Endpoints
+
+### Core Endpoints (`ai_processing/app/main.py`)
+- `GET /health`: Health check
+- `POST /transcribe`: Audio transcription
+- `POST /process-transcript`: Process transcript with AI
+- `GET /get-summary/{meeting_id}`: Get meeting summary
+- `GET /get-meetings`: List all meetings
+- `GET /get-meeting/{meeting_id}`: Get specific meeting
+- `POST /save-meeting-title`: Update meeting title
+- `POST /delete-meeting`: Delete meeting
+- `POST /identify-speakers`: Speaker identification
+- `POST /extract-tasks`: Task extraction
+- `POST /process-complete-meeting`: Complete AI processing
+
+### WebSocket Endpoints
+- `/ws`: WebSocket connection for real-time communication
+- Message types: `HANDSHAKE`, `AUDIO_CHUNK`, `TRANSCRIPTION_RESULT`, `MEETING_EVENT`
+
+## Development Workflow
+
+### Setup Commands
+```bash
+# Backend setup
+cd ai_processing
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+./build_whisper.sh
+./clean_start_backend.sh
+
+# Frontend setup
+cd frontend_dashboard
+npm install
+npm run dev
+
+# Chrome extension
+# Load unpacked extension from chrome_extension/ directory
+```
+
+### Testing Commands
+```bash
+# Backend tests
+cd ai_processing
+python test_chrome_extension_readiness.py
+python test_groq_optimization.py
+python test_memory_profiling.py
+
+# Integration tests
+cd integration
+python app/test_basic_functionality.py
+python app/test_enhanced_integrations.py
+```
+
+## Common Development Tasks
+
+### Adding New AI Processing Features
+1. Modify `app/ai_processor.py` for new AI calls
+2. Update `app/main.py` to add new endpoints
+3. Add corresponding frontend components
+4. Update Chrome extension if needed
+
+### Adding New Integrations
+1. Create new integration class in `integration/app/integrations.py`
+2. Add tools in `integration/app/tools.py`
+3. Update `integration_adapter.py` to include new integration
+4. Add environment variables and configuration
+
+### Database Changes
+1. Update both `tidb_database.py` and `sqlite_database.py`
+2. Modify `database_interface.py` if adding new methods
+3. Update database schema documentation
+4. Test with both database types
+
+### Chrome Extension Updates
+1. Modify content scripts in `chrome_extension/`
+2. Update `manifest.json` for new permissions
+3. Test across supported platforms (Meet, Zoom, Teams)
+4. Update WebSocket message handling
+
+## Deployment
+
+### Production Deployment (EC2)
+```bash
+# Run deployment scripts
+./deployment/setup_ec2_instance.sh
+./deployment/setup_application.sh
+./deployment/setup_pm2.sh
+./deployment/setup_ngrok.sh
+
+# PM2 process management
+pm2 status
+pm2 logs
+pm2 restart all
+```
+
+### Environment-Specific Configuration
+- **Development**: SQLite database, local Whisper, mock integrations
+- **Production**: TiDB database, optimized Whisper, real API integrations
+- **Testing**: Mock mode for all external APIs
+
+## Troubleshooting
+
+### Common Issues
+1. **Whisper not found**: Run `./build_whisper.sh` in ai_processing/
+2. **Database connection failed**: Check TiDB connection string
+3. **Chrome extension not working**: Check manifest.json and reload extension
+4. **WebSocket connection failed**: Verify backend is running and ports are open
+5. **AI processing failed**: Check Groq API key and rate limits
+
+### Debug Commands
+```bash
+# Check backend health
+curl http://localhost:5167/health
+
+# Test WebSocket
+# Use browser dev tools or WebSocket testing tools
+
+# Check PM2 processes
+pm2 monit
+
+# View logs
+tail -f ai_processing/backend.log
+tail -f logs/backend-combined.log
+```
+
+## Integration Capabilities
+
+### Supported Platforms
+- **Notion**: Task creation in databases with rich properties
+- **Slack**: Channel notifications with formatted messages
+- **ClickUp**: Task creation with user assignment and priorities
+
+### AI Processing Features
+- **Speaker Identification**: Distinguish between meeting participants
+- **Meeting Summarization**: Generate structured meeting summaries
+- **Task Extraction**: Automatically identify action items
+- **Batch Processing**: Optimize API calls with intelligent batching
+
+## Security Considerations
+
+### API Keys and Tokens
+- Store in environment variables, never in code
+- Use different keys for development and production
+- Rotate keys regularly
+- Implement proper error handling for authentication failures
+
+### Data Privacy
+- Audio processing happens locally (Whisper.cpp)
+- Transcripts stored in TiDB with proper access controls
+- No audio data sent to external APIs
+- User consent required for Chrome extension
+
+## Performance Optimization
+
+### AI Processing
+- Batch processing reduces API calls by 90%
+- Intelligent chunking for large transcripts
+- Memory-efficient audio buffering
+- Async processing for non-blocking operations
+
+### Database
+- Proper indexing on frequently queried fields
+- Connection pooling for TiDB
+- Fallback to SQLite for development
+- Efficient query patterns
+
+### Chrome Extension
+- Minimal memory footprint
+- Efficient audio capture and streaming
+- Smart reconnection logic for WebSocket
+- Participant detection optimization
+
+## Testing Strategy
+
+### Unit Tests
+- Individual component testing
+- Mock external dependencies
+- Database interface testing
+- AI processing validation
+
+### Integration Tests
+- End-to-end workflow testing
+- Real API integration testing
+- Chrome extension functionality
+- WebSocket communication
+
+### Performance Tests
+- Memory usage profiling
+- API response time testing
+- Concurrent user handling
+- Database performance testing
+
+This comprehensive context should enable any coding assistant to effectively understand, modify, and extend the ScrumBot codebase while maintaining its architecture and design principles.

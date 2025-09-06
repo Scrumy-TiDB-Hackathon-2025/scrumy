@@ -25,20 +25,20 @@ class AudioChunk:
     sample_width: int = 2
 
 class SessionAudioBuffer:
-    """Buffer audio chunks with 1.5s target duration and timeout-based processing"""
+    """Enhanced buffer with 3s target duration for better speech recognition"""
     
-    def __init__(self, session_id: str, target_duration_ms: int = 1500):
+    def __init__(self, session_id: str, target_duration_ms: int = 3000):
         self.session_id = session_id
-        self.target_duration_ms = target_duration_ms
+        self.target_duration_ms = target_duration_ms  # Increased from 1500ms to 3000ms
         self.buffer = bytearray()
-        self.target_samples = (target_duration_ms * 16000) // 1000  # 24000 samples for 1.5s
+        self.target_samples = (target_duration_ms * 16000) // 1000  # 48000 samples for 3s
         self.last_flush = None  # Set when first chunk arrives
         self.sample_rate = 16000
         self.channels = 1
         self.sample_width = 2
-        self.timeout_seconds = 3.0
+        self.timeout_seconds = 5.0  # Increased from 3.0s to 5.0s
         
-        logger.info(f"Created audio buffer: {session_id}, target={target_duration_ms}ms ({self.target_samples} samples)")
+        logger.info(f"Enhanced audio buffer: {session_id}, target={target_duration_ms}ms ({self.target_samples} samples)")
         
     def add_chunk(self, audio_data: bytes, timestamp: float, metadata: Dict) -> bool:
         """Add audio chunk to buffer. Returns True if ready for processing."""

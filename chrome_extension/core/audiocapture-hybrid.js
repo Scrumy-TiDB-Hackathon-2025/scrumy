@@ -375,18 +375,30 @@ class AudioProcessor {
     this.processor.connect(this.context.destination);
     
     // Also start MediaRecorder for backup file
-    this.mediaRecorder = new MediaRecorder(stream);
+    this.mediaRecorder = new MediaRecorder(stream, {
+      mimeType: 'audio/webm;codecs=opus'
+    });
     this.recordedChunks = [];
+    this.recordedPCMData = []; // Store PCM data for WAV generation
     
     this.mediaRecorder.ondataavailable = (event) => {
       if (event.data && event.data.size > 0) {
         this.recordedChunks.push(event.data);
+        console.log(`📦 MediaRecorder chunk: ${event.data.size} bytes`);
       }
     };
     
     this.mediaRecorder.onstop = () => {
-      const blob = new Blob(this.recordedChunks, { type: 'audio/webm' });
-      this.downloadBlob(blob);
+      console.log(`📦 MediaRecorder stopped with ${this.recordedChunks.length} chunks`);
+      
+      // Generate both WebM and WAV files
+      const webmBlob = new Blob(this.recordedChunks, { type: 'audio/webm' });
+      this.downloadBlob(webmBlob, 'webm');
+      
+      // Generate WAV from PCM data
+      if (this.recordedPCMData.length > 0) {
+        this.generateWAVFromPCM();
+      }
     };
     
     this.processor.onaudioprocess = (event) => {
@@ -398,11 +410,14 @@ class AudioProcessor {
         
         if (!channelData || channelData.length === 0) return;
         
-        // Convert to 16-bit PCM for WebSocket
+        // Convert to 16-bit PCM for both WebSocket and file generation
         const pcmData = new Int16Array(channelData.length);
         for (let i = 0; i < channelData.length; i++) {
           pcmData[i] = Math.max(-32768, Math.min(32767, channelData[i] * 32768));
         }
+        
+        // Store PCM data for WAV file generation
+        this.recordedPCMData.push(new Int16Array(pcmData));
         
         // Send to WebSocket via callback
         if (onAudioData) {
@@ -418,7 +433,7 @@ class AudioProcessor {
     this.mediaRecorder.start(1000);
     this.isProcessing = true;
     
-    console.log('✅ AudioProcessor: Enhanced processing started (WebSocket + File)');
+    console.log('✅ AudioProcessor: Enhanced processing started (WebSocket + Dual File Format)');
   }
 
   stopProcessing() {
@@ -454,9 +469,74 @@ class AudioProcessor {
     this.recordedChunks = [];
   }
   
-  downloadBlob(blob) {
+  generateWAVFromPCM() {
+    console.log(`🎵 AudioProcessor: Generating WAV from ${this.recordedPCMData.length} PCM chunks`);
+    
+    if (this.recordedPCMData.length === 0) {
+      console.warn('⚠️ No PCM data to generate WAV file');
+      return;
+    }
+    
+    // Calculate total samples
+    const totalSamples = this.recordedPCMData.reduce((sum, chunk) => sum + chunk.length, 0);
+    const duration = totalSamples / 16000;
+    
+    console.log(`🎵 WAV Stats: ${duration.toFixed(2)}s, ${totalSamples} samples, ${this.recordedPCMData.length} chunks`);
+    
+    // Combine all PCM chunks
+    const combinedData = new Int16Array(totalSamples);
+    let offset = 0;
+    for (const chunk of this.recordedPCMData) {
+      combinedData.set(chunk, offset);
+      offset += chunk.length;
+    }
+    
+    // Create WAV file
+    const wavBuffer = this.createWAVBuffer(combinedData);
+    const blob = new Blob([wavBuffer], { type: 'audio/wav' });
+    
+    this.downloadBlob(blob, 'wav');
+  }
+
+  createWAVBuffer(pcmData) {
+    const length = pcmData.length;
+    const buffer = new ArrayBuffer(44 + length * 2);
+    const view = new DataView(buffer);
+    
+    // WAV header
+    const writeString = (offset, string) => {
+      for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+      }
+    };
+    
+    writeString(0, 'RIFF');
+    view.setUint32(4, 36 + length * 2, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true); // mono
+    view.setUint32(24, 16000, true); // sample rate
+    view.setUint32(28, 16000 * 2, true); // byte rate
+    view.setUint16(32, 2, true); // block align
+    view.setUint16(34, 16, true); // bits per sample
+    writeString(36, 'data');
+    view.setUint32(40, length * 2, true);
+    
+    // PCM data
+    let offset = 44;
+    for (let i = 0; i < length; i++) {
+      view.setInt16(offset, pcmData[i], true);
+      offset += 2;
+    }
+    
+    return buffer;
+  }
+
+  downloadBlob(blob, format = 'webm') {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `scrumbot-hybrid-direct-${timestamp}.webm`;
+    const filename = `scrumbot-hybrid-${format}-${timestamp}.${format}`;
     
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -471,7 +551,7 @@ class AudioProcessor {
       URL.revokeObjectURL(url);
     }, 1000);
     
-    console.log(`📥 Downloaded: ${filename} (${blob.size} bytes)`);
+    console.log(`📥 Downloaded: ${filename} (${(blob.size / 1024).toFixed(1)}KB)`);
   }
 }
 

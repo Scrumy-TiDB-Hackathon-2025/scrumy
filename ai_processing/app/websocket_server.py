@@ -37,7 +37,7 @@ class AudioProcessor:
         self.whisper_executable = os.getenv('WHISPER_EXECUTABLE', './whisper.cpp/build/bin/whisper-cli')
 
     async def process_audio_chunk(self, audio_data: bytes, metadata: Dict) -> Dict:
-        """Process audio chunk and return transcription"""
+        """Enhanced audio chunk processing with better analysis"""
         try:
             # Create temporary file for audio data
             with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
@@ -46,29 +46,46 @@ class AudioProcessor:
                 # Convert audio data to WAV format if needed
                 await self._write_audio_to_wav(audio_data, temp_path, metadata)
 
-                # Run Whisper transcription
-                transcript = await self._transcribe_audio(temp_path)
+                # Analyze audio before processing
+                audio_stats = await self._analyze_audio_file(temp_path)
+                print(f"🎵 Audio Stats: {audio_stats}")
+                
+                # Skip processing if clearly silence
+                if audio_stats.get('is_likely_silence', False):
+                    print("⚠️ Skipping Whisper processing - audio appears to be silence")
+                    os.unlink(temp_path)
+                    return {
+                        'text': '[SILENCE_DETECTED]',
+                        'confidence': 0.0,
+                        'timestamp': datetime.now().isoformat(),
+                        'metadata': metadata
+                    }
+
+                # Run enhanced Whisper transcription
+                transcript = await self._transcribe_audio_enhanced(temp_path)
                 
                 # Log processing result
-                if transcript:
+                if transcript and transcript not in ['[BLANK_AUDIO]', '[SILENCE_DETECTED]']:
                     print(f"✅ Transcription successful: '{transcript[:50]}{'...' if len(transcript) > 50 else ''}'")
+                    print(f"📝 Whisper result: '{transcript}'")
                 else:
-                    print(f"⚠️ Empty transcription result")
+                    print(f"⚠️ Empty or blank transcription result: '{transcript}'")
 
                 # Clean up temp file
                 os.unlink(temp_path)
 
                 return {
                     'text': transcript,
-                    'confidence': 0.85,  # Default confidence
+                    'confidence': 0.85 if transcript and transcript not in ['[BLANK_AUDIO]', '[SILENCE_DETECTED]'] else 0.0,
                     'timestamp': datetime.now().isoformat(),
-                    'metadata': metadata
+                    'metadata': metadata,
+                    'audio_stats': audio_stats
                 }
 
         except Exception as e:
             logger.error(f"Audio processing error: {e}")
             return {
-                'text': '',
+                'text': '[PROCESSING_ERROR]',
                 'confidence': 0.0,
                 'timestamp': datetime.now().isoformat(),
                 'error': str(e)
@@ -98,17 +115,60 @@ class AudioProcessor:
             with open(output_path, 'wb') as f:
                 f.write(audio_data)
 
-    async def _transcribe_audio(self, audio_path: str) -> str:
-        """Transcribe audio using Whisper"""
+    async def _analyze_audio_file(self, audio_path: str) -> Dict:
+        """Analyze audio file for quality and content"""
         try:
+            import wave
+            import numpy as np
+            
+            with wave.open(audio_path, 'rb') as wav_file:
+                sample_rate = wav_file.getframerate()
+                frames = wav_file.readframes(-1)
+                audio_data = np.frombuffer(frames, dtype=np.int16)
+                
+                if len(audio_data) == 0:
+                    return {'is_likely_silence': True, 'error': 'No audio data'}
+                
+                # Calculate audio statistics
+                max_amplitude = np.max(np.abs(audio_data))
+                rms = np.sqrt(np.mean(audio_data.astype(np.float64) ** 2))
+                duration = len(audio_data) / sample_rate
+                
+                # Determine if likely silence
+                is_likely_silence = max_amplitude < 100  # Very low threshold for 16-bit audio
+                
+                return {
+                    'sample_rate': sample_rate,
+                    'duration': duration,
+                    'max_amplitude': int(max_amplitude),
+                    'rms': float(rms),
+                    'is_likely_silence': is_likely_silence,
+                    'samples': len(audio_data)
+                }
+                
+        except Exception as e:
+            logger.error(f"Audio analysis error: {e}")
+            return {'is_likely_silence': False, 'error': str(e)}
+
+    async def _transcribe_audio_enhanced(self, audio_path: str) -> str:
+        """Enhanced Whisper transcription with better parameters"""
+        try:
+            # Enhanced Whisper command with better parameters
             cmd = [
                 self.whisper_executable,
                 '-m', self.whisper_model_path,
                 '-f', audio_path,
-                '--output-txt'
+                '--output-txt',
+                '--language', 'en',
+                '--threads', '4',
+                '--processors', '1',
+                '--no-timestamps',  # Remove timestamps for cleaner output
+                '--max-len', '0',   # No length limit
+                '--word-thold', '0.01',  # Lower word threshold
+                '--entropy-thold', '2.40',  # Lower entropy threshold for better detection
             ]
             
-            print(f"🤖 Running Whisper: {' '.join(cmd)}")
+            print(f"🤖 Running Enhanced Whisper: {' '.join(cmd)}")
 
             process = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -132,14 +192,31 @@ class AudioProcessor:
                         with open(output_file, 'r') as f:
                             result = f.read().strip()
                         os.unlink(output_file)  # Clean up
-                return result
+                
+                # Clean the output
+                if result:
+                    # Remove timestamp patterns
+                    import re
+                    result = re.sub(r'\[[\d:.\s\->]+\]\s*', '', result)
+                    result = result.strip()
+                    
+                    if result and result != '[BLANK_AUDIO]':
+                        return result
+                    else:
+                        return '[BLANK_AUDIO]'
+                else:
+                    return '[BLANK_AUDIO]'
             else:
                 logger.error(f"Whisper error: {stderr.decode('utf-8')}")
-                return ""
+                return '[WHISPER_ERROR]'
 
         except Exception as e:
-            logger.error(f"Transcription error: {e}")
-            return ""
+            logger.error(f"Enhanced transcription error: {e}")
+            return '[PROCESSING_ERROR]'
+
+    async def _transcribe_audio(self, audio_path: str) -> str:
+        """Legacy transcribe method - redirects to enhanced version"""
+        return await self._transcribe_audio_enhanced(audio_path)
 
 class MeetingSession:
     """Manage individual meeting session state with lazy AI initialization"""
