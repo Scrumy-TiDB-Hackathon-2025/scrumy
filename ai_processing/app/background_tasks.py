@@ -16,7 +16,7 @@ class BackgroundTaskManager:
         self._running = False
         self._audio_buffer_manager = None
         self._websocket_manager = None
-    
+
     async def start(self, audio_buffer_manager, websocket_manager):
         """Start the background task"""
         self._audio_buffer_manager = audio_buffer_manager
@@ -25,7 +25,7 @@ class BackgroundTaskManager:
             self._running = True
             self._task = asyncio.create_task(self._timeout_checker_loop())
             print("🚀 Background timeout checker started")
-    
+
     async def stop(self):
         """Stop the background task"""
         self._running = False
@@ -37,40 +37,44 @@ class BackgroundTaskManager:
                 pass
             self._task = None
             print("🛑 Background timeout checker stopped")
-    
+
     async def _timeout_checker_loop(self):
         """Background loop to check for timeout-based buffer processing"""
         print(f"🔍 Background task loop started - checking every 1s")
-        
+
         while self._running:
             try:
                 buffer_count = len(self._audio_buffer_manager.buffers) if self._audio_buffer_manager else 0
-                print(f"🔍 [DEBUG] Background check: {buffer_count} buffers in manager")
-                
+
                 if self._audio_buffer_manager and buffer_count > 0:
-                    print(f"🔍 Checking {buffer_count} buffers for timeout...")
-                    
+                    # Only log when there are buffers with content or processing needed
+                    has_activity = False
+
                     for session_id, buffer in list(self._audio_buffer_manager.buffers.items()):
                         duration = buffer.get_duration_ms()
                         time_since_flush = time.time() - buffer.last_flush if buffer.last_flush else 0
                         buffer_len = len(buffer.buffer)
-                        print(f"   Buffer {session_id}: {duration:.1f}ms, {buffer_len} bytes, {time_since_flush:.1f}s since flush")
-                        
+
                         # Check if buffer should be processed (handles both buffer full and timeout)
                         if buffer.should_process():
+                            if not has_activity:
+                                print(f"🔍 [DEBUG] Background check: {buffer_count} buffers in manager")
+                                has_activity = True
                             print(f"⏰ Timeout triggered for session {session_id} ({duration:.1f}ms, {time_since_flush:.1f}s)")
                             await self._process_timeout_buffer(session_id, buffer)
-                        else:
-                            print(f"   Buffer {session_id}: Not ready (duration={duration:.1f}ms, time={time_since_flush:.1f}s)")
-                else:
-                    print(f"🔍 No buffers to check (manager={self._audio_buffer_manager is not None}, count={buffer_count})")
-                
+                        elif duration > 0 or time_since_flush < 10:  # Only log if there's recent activity
+                            if not has_activity:
+                                print(f"🔍 [DEBUG] Background check: {buffer_count} buffers in manager")
+                                has_activity = True
+                            print(f"   Buffer {session_id}: {duration:.1f}ms, {buffer_len} bytes, {time_since_flush:.1f}s since flush")
+                # Skip logging when no buffers or no activity
+
             except Exception as e:
                 print(f"❌ Error in timeout checker: {e}")
                 logger.error(f"Timeout checker error: {e}")
-            
+
             await asyncio.sleep(1.0)
-    
+
     async def _process_timeout_buffer(self, session_id: str, buffer):
         """Process buffer due to timeout"""
         try:

@@ -10,6 +10,7 @@ import websockets
 import tempfile
 import os
 import sys
+import threading
 from typing import Dict, Set, Optional, List
 from datetime import datetime
 import wave
@@ -410,19 +411,28 @@ class WebSocketManager:
         self.audio_processor = AudioProcessor()
         self.audio_buffer_manager = AudioBufferManager()
         self.batch_processor = None  # Initialized when first session is created
+        self.processing_locks: Dict[str, threading.Lock] = {}  # Prevent race conditions
 
 
 
     async def _process_timeout_buffer(self, session_id: str, buffer):
         """Process buffer due to timeout"""
-        try:
-            duration = buffer.get_duration_ms()
-            print(f"🎤 Processing timeout buffer ({duration:.1f}ms) for session {session_id}")
+        # Get or create processing lock for this session
+        if session_id not in self.processing_locks:
+            self.processing_locks[session_id] = threading.Lock()
 
-            # Create WAV file from buffered audio
-            wav_path = buffer.create_wav_file()
-            if wav_path:
-                try:
+        # Try to acquire lock - if already processing, skip
+        if not self.processing_locks[session_id].acquire(blocking=False):
+            print(f"⏰ Skipping timeout processing - session {session_id} already being processed")
+            return
+
+        try:
+            if buffer and len(buffer.buffer) > 0:
+                print(f"⏰ Processing timeout buffer: {session_id} ({buffer.get_duration_ms():.1f}ms)")
+
+                # Create WAV file from buffered audio
+                wav_path = buffer.create_wav_file()
+                if wav_path:
                     # Process audio with Whisper
                     transcription_result = await self.audio_processor.process_audio_chunk(
                         buffer.get_buffered_audio(), {}
@@ -434,9 +444,6 @@ class WebSocketManager:
 
                     # Clean up temp file
                     os.unlink(wav_path)
-
-                except Exception as e:
-                    print(f"❌ Timeout processing failed: {e}")
                     if os.path.exists(wav_path):
                         os.unlink(wav_path)
 
@@ -445,22 +452,42 @@ class WebSocketManager:
 
         except Exception as e:
             logger.error(f"Error processing timeout buffer: {e}")
+        finally:
+            # Always release the lock
+            self.processing_locks[session_id].release()
 
     async def _broadcast_transcription_result(self, session_id: str, transcription_result: Dict):
         """Broadcast transcription result to all connections for a session"""
         try:
+            # Find session for duplicate checking
+            session = self.meeting_sessions.get(session_id)
+            if not session:
+                print(f"⚠️ No session found for {session_id} - skipping broadcast")
+                return
+
+            # Check for duplicates before broadcasting
+            transcript_text = transcription_result.get('text', '').strip()
+            if not transcript_text or session.buffer._is_duplicate_transcript(transcript_text):
+                print(f"⚠️ Skipping duplicate timeout transcript: '{transcript_text[:50]}...'")
+                return
+
+            # Add to recent transcripts for future deduplication
+            session.buffer.recent_transcripts.append(transcript_text.lower())
+            if len(session.buffer.recent_transcripts) > session.buffer.max_recent_transcripts:
+                session.buffer.recent_transcripts.pop(0)  # Remove oldest
+
             # Find connections for this session
             target_connections = []
             for websocket, connection_info in self.active_connections.items():
-                session = connection_info.get('meeting_session')
-                if session and session.meeting_id == session_id:
+                connection_session = connection_info.get('meeting_session')
+                if connection_session and connection_session.meeting_id == session_id:
                     target_connections.append(websocket)
 
             # Send to all connections
             for websocket in target_connections:
                 try:
                     timeout_data = WebSocketEventData.transcription_result(
-                        text=transcription_result.get('text', ''),
+                        text=transcript_text,
                         confidence=transcription_result.get('confidence', 0.0),
                         timestamp=transcription_result.get('timestamp'),
                         speaker='Unknown',
@@ -614,30 +641,43 @@ class WebSocketManager:
                 buffer_full = current_samples >= audio_buffer.target_samples
 
                 if buffer_full:
-                    print(f"🎤 Buffer full ({audio_buffer.get_duration_ms():.1f}ms) - processing with Whisper...")
+                    # Get or create processing lock for this session
+                    if meeting_id not in self.processing_locks:
+                        self.processing_locks[meeting_id] = threading.Lock()
 
-                    # Create WAV file from buffered audio
-                    wav_path = audio_buffer.create_wav_file()
-                    if wav_path:
-                        try:
-                            # Process combined audio with Whisper
-                            transcription_result = await self.audio_processor.process_audio_chunk(
-                                audio_buffer.get_buffered_audio(), metadata
-                            )
-                            print(f"📝 Whisper result: '{transcription_result.get('text', 'EMPTY')}'")
+                    # Try to acquire lock - if already processing, skip
+                    if not self.processing_locks[meeting_id].acquire(blocking=False):
+                        print(f"🎤 Skipping regular processing - session {meeting_id} already being processed")
+                        return
 
-                            # Clean up temp file
-                            os.unlink(wav_path)
+                    try:
+                        print(f"🎤 Buffer full ({audio_buffer.get_duration_ms():.1f}ms) - processing with Whisper...")
 
-                        except Exception as e:
-                            print(f"❌ Whisper processing failed: {e}")
-                            if os.path.exists(wav_path):
+                        # Create WAV file from buffered audio
+                        wav_path = audio_buffer.create_wav_file()
+                        if wav_path:
+                            try:
+                                # Process combined audio with Whisper
+                                transcription_result = await self.audio_processor.process_audio_chunk(
+                                    audio_buffer.get_buffered_audio(), metadata
+                                )
+                                print(f"📝 Whisper result: '{transcription_result.get('text', 'EMPTY')}'")
+
+                                # Clean up temp file
                                 os.unlink(wav_path)
 
-                        # Clear buffer after processing
-                        audio_buffer.clear()
-                    else:
-                        print(f"❌ Failed to create WAV file from buffer")
+                            except Exception as e:
+                                print(f"❌ Whisper processing failed: {e}")
+                                if os.path.exists(wav_path):
+                                    os.unlink(wav_path)
+
+                            # Clear buffer after processing
+                            audio_buffer.clear()
+                        else:
+                            print(f"❌ Failed to create WAV file from buffer")
+                    finally:
+                        # Always release the lock
+                        self.processing_locks[meeting_id].release()
                 else:
                     # Timeout scenario - don't process here, let background task handle it
                     print(f"⏰ Timeout ready - leaving for background task")
@@ -645,7 +685,10 @@ class WebSocketManager:
 
             if not ready_for_processing:
                 print(f"🔄 Buffering audio chunk ({audio_buffer.get_duration_ms():.1f}ms/{audio_buffer.target_duration_ms}ms)")
+                # Early return - let background task handle timeout processing
+                return
 
+            # Only continue if we actually processed something (buffer was full, not timeout)
             # Log transcript chunk (if logger available)
             if transcription_result.get('text') and session.buffer.logger:
                 session.buffer.logger.log_transcript_chunk(
@@ -678,34 +721,23 @@ class WebSocketManager:
                     timestamp_end=(len(session.transcript_chunks) + 1) * 5.0,
                     raw_text=transcript_text,
                     participants_present=participants,
-                    confidence=transcription_result.get('confidence', 0.85),
-                    chunk_index=len(session.transcript_chunks)
+                    speaker_info=participants[0] if participants else {'name': 'Unknown', 'id': 'unknown'},
+                    confidence=transcription_result.get('confidence', 0.0)
                 )
 
-                # Add to buffer (no AI call yet)
                 session.buffer.add_chunk(chunk)
 
-                # Check if we should process batch (only if AI is available)
-                if session.buffer.should_process_batch():
-                    try:
-                        logger.info(f"Triggering batch processing for meeting {meeting_id}")
-                        session.batch_processor.start_batch_processing(session.buffer)
-                    except Exception as e:
-                        logger.warning(f"Batch processing failed (AI unavailable): {e}")
-                        # Continue without AI processing
+                # Calculate speaker information
+                speaker_name = 'Unknown'
+                if participants:
+                    speaker_name = participants[0].get('name', 'Unknown')
+                elif session.participant_data:
+                    # Use the most recent speaker or first participant
+                    speaker_name = list(session.participant_data.values())[0].get('name', 'Unknown')
 
-                # Use fallback speaker identification for immediate response (no AI)
-                speaker_name = session.buffer._fallback_speaker_identification(chunk)
-                transcription_result['speakers'] = [{'name': speaker_name}] if speaker_name != 'Unknown' else []
-
-            # Send transcription result if we processed audio (buffer full) or have text
-            should_send_result = (ready_for_processing or
-                                transcription_result.get('text') or
-                                (current_samples >= audio_buffer.target_samples * 0.98))
-
-            if should_send_result:
-                speakers = transcription_result.get('speakers', [])
-                speaker_name = speakers[0].get('name', 'Unknown') if speakers else 'Unknown'
+                # Generate response with chunk ID for tracking
+                chunk_id = f"chunk_{int(time.time() * 1000)}_{meeting_id}"
+                is_flushing = ready_for_processing
 
                 response_data = {
                     'text': transcription_result.get('text', ''),
