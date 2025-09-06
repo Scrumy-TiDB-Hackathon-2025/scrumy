@@ -106,15 +106,30 @@ class MeetingBuffer:
             end_time = self._format_timestamp(chunk.timestamp_end)
             transcript_lines.append(f"[{start_time}-{end_time}] \"{chunk.raw_text}\"")
         
-        batch_prompt = f"""Participants: {participants_str}
-Meeting: {self.meeting_id}
-Platform: Meeting Platform
+        batch_prompt = f"""Analyze this meeting transcript and identify speakers for each segment.
 
-Transcript with timestamps:
+PARTICIPANTS: {participants_str}
+MEETING ID: {self.meeting_id}
+PLATFORM: Meeting Platform
+
+TRANSCRIPT WITH TIMESTAMPS:
 {chr(10).join(transcript_lines)}
 
-Identify the speaker for each segment. Use participant names when possible.
-Return JSON format: {{"segments": [{{"timestamp": "[00:00-00:05]", "text": "...", "speaker": "Name"}}]}}"""
+TASK: Identify the speaker for each transcript segment. Use the participant names provided when possible.
+
+REQUIRED OUTPUT FORMAT (JSON only, no additional text):
+{{
+  "segments": [
+    {{
+      "timestamp": "[00:00-00:05]",
+      "text": "exact text from transcript",
+      "speaker": "Participant Name or Unknown",
+      "confidence": 0.85
+    }}
+  ],
+  "analysis": "Brief analysis of speaker patterns",
+  "total_segments": 3
+}}"""
         
         # Log batch processing (only if debug enabled)
         if self.logger:
@@ -248,7 +263,10 @@ class BatchProcessor:
             # Use AI processor for speaker identification
             system_prompt = """You are an expert at identifying speakers in meeting transcripts. 
             Analyze the transcript and identify who is speaking in each segment based on context clues, 
-            participant information, and speech patterns."""
+            participant information, and speech patterns.
+            
+            CRITICAL: You must respond with valid JSON only. Do not include any explanatory text, 
+            markdown formatting, or additional commentary. Your response must be parseable by json.loads()."""
             
             # Log Groq request (only if debug enabled)
             if self.current_logger:
@@ -260,19 +278,32 @@ class BatchProcessor:
             if self.current_logger:
                 self.current_logger.log_groq_response(response)
             
-            # Parse JSON response
+            # Parse JSON response (should already be valid JSON from AI processor)
             import json
             try:
                 result = json.loads(response)
                 print(f"✅ Successfully parsed Groq JSON response")
+                
+                # Validate the response structure
+                if not isinstance(result, dict):
+                    print(f"⚠️ Response is not a dictionary, wrapping it")
+                    result = {"raw_result": result, "speakers": [], "analysis": "Non-dict response"}
+                
+                # Ensure required fields exist
+                if "speakers" not in result:
+                    result["speakers"] = []
+                if "analysis" not in result:
+                    result["analysis"] = "Analysis not provided"
+                
                 return result
+                
             except json.JSONDecodeError as e:
                 print(f"❌ Failed to parse Groq response as JSON: {e}")
                 print(f"📝 Raw response: {response[:200]}...")
                 
-                # Return a valid fallback response
+                # This should rarely happen now with improved AI processor
                 return {
-                    "error": "JSON parsing failed",
+                    "error": "JSON parsing failed in buffer",
                     "raw_response": response[:500],  # First 500 chars for debugging
                     "speakers": [],
                     "analysis": "Could not parse AI response"
