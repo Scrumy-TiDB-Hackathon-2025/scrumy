@@ -496,6 +496,8 @@ class WebSocketManager:
             audio_data = message.get('data')
             timestamp = message.get('timestamp')
             message_type = message.get('type')
+            chunk_id = message.get('chunkId')  # For buffer flush tracking
+            is_flushing = message.get('isFlushing', False)
 
             # Handle both basic and enhanced audio chunk formats
             if message_type == 'AUDIO_CHUNK_ENHANCED':
@@ -664,7 +666,9 @@ class WebSocketManager:
                     'text': transcription_result.get('text', ''),
                     'confidence': transcription_result.get('confidence', 0.0),
                     'timestamp': transcription_result.get('timestamp'),
-                    'speaker': speaker_name
+                    'speaker': speaker_name,
+                    'chunkId': chunk_id,  # Include chunk ID for tracking
+                    'isFlushing': is_flushing
                 }
 
                 # Send both formats for compatibility
@@ -736,6 +740,21 @@ class WebSocketManager:
         elif event_type in ['ended', 'meeting_ended']:
             print(f"\n🏁 Meeting ended - starting final processing...")
 
+            # Check if this is a buffer flush completion signal
+            buffer_flush_complete = data.get('bufferFlushComplete', False)
+
+            if not buffer_flush_complete:
+                # Legacy behavior or partial end signal - wait for buffer flush
+                print("⏳ Meeting end signal received - waiting for buffer flush completion...")
+                await self.send_message(websocket, {
+                    'type': 'PROCESSING_STATUS',
+                    'data': {
+                        'message': 'Waiting for audio buffer flush completion...',
+                        'stage': 'buffer_flush_wait'
+                    }
+                })
+                return
+
             # Send initial processing status
             await self.send_message(websocket, {
                 'type': 'PROCESSING_STATUS',
@@ -773,6 +792,16 @@ class WebSocketManager:
                             if final_result.get('text'):
                                 session.add_transcript_chunk(final_result)
                                 print(f"✅ Final audio processed: '{final_result['text'][:50]}...'")
+
+                                # Send transcription result with processing complete flag
+                                await self.send_message(websocket, {
+                                    'type': 'TRANSCRIPTION_RESULT',
+                                    'data': {
+                                        'text': final_result['text'],
+                                        'timestamp': final_result.get('timestamp', datetime.now().isoformat()),
+                                        'is_final': True
+                                    }
+                                })
                             os.unlink(wav_path)
                         except Exception as e:
                             print(f"❌ Final audio processing failed: {e}")
@@ -796,7 +825,8 @@ class WebSocketManager:
                     'data': {
                         'message': 'Meeting processing completed',
                         'total_transcripts': len(session.transcript_chunks),
-                        'meeting_id': session.meeting_id
+                        'meeting_id': session.meeting_id,
+                        'buffer_flush_confirmed': True
                     }
                 })
 
@@ -810,7 +840,8 @@ class WebSocketManager:
                     'type': 'PROCESSING_COMPLETE',
                     'data': {
                         'message': 'No active session - processing completed',
-                        'total_transcripts': 0
+                        'total_transcripts': 0,
+                        'buffer_flush_confirmed': True
                     }
                 })
             print(f"✅ Meeting end processing completed!")
