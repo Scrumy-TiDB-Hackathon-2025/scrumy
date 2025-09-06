@@ -1,17 +1,9 @@
 // websocket-client.js - WebSocket client for real-time audio streaming
 
 // Use global constants to avoid conflicts (defined in content.js)
-const WebSocketEventTypes = window.ScrumBotWebSocketConstants
-  ?.WebSocketEventTypes || {
-  HANDSHAKE: "HANDSHAKE",
-  HANDSHAKE_ACK: "HANDSHAKE_ACK",
-  TRANSCRIPTION_RESULT: "TRANSCRIPTION_RESULT",
-  MEETING_EVENT: "MEETING_EVENT",
-  PROCESSING_STATUS: "PROCESSING_STATUS",
-  PROCESSING_COMPLETE: "PROCESSING_COMPLETE",
-  ERROR: "ERROR",
-};
-
+// Use global constants defined in content.js - no redeclaration
+const WebSocketEventTypes =
+  window.ScrumBotWebSocketConstants?.WebSocketEventTypes;
 const getStandardEventType =
   window.ScrumBotWebSocketConstants?.getStandardEventType ||
   ((eventType) => eventType);

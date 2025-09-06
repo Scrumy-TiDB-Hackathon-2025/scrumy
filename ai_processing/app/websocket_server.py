@@ -721,8 +721,9 @@ class WebSocketManager:
                     timestamp_end=(len(session.transcript_chunks) + 1) * 5.0,
                     raw_text=transcript_text,
                     participants_present=participants,
-                    speaker_info=participants[0] if participants else {'name': 'Unknown', 'id': 'unknown'},
-                    confidence=transcription_result.get('confidence', 0.0)
+                    confidence=transcription_result.get('confidence', 0.0),
+                    chunk_index=len(session.transcript_chunks),
+                    speaker=participants[0].get('name', 'Unknown') if participants else 'Unknown'
                 )
 
                 session.buffer.add_chunk(chunk)
