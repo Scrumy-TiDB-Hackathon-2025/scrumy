@@ -261,7 +261,7 @@ async def transcribe(file: UploadFile = File(...)):
 # Initialize database based on environment configuration
 def create_database():
     """Create database instance based on environment configuration"""
-    db_type = os.getenv('DATABASE_TYPE', 'sqlite').lower()
+    db_type = os.getenv('DATABASE_TYPE', 'tidb').lower()
 
     if db_type == 'tidb':
         # TiDB configuration from environment
@@ -272,7 +272,7 @@ def create_database():
                 "port": int(os.getenv('TIDB_PORT', 4000)),
                 "user": os.getenv('TIDB_USER'),
                 "password": os.getenv('TIDB_PASSWORD'),
-                "database": os.getenv('TIDB_DATABASE', 'scrumy_ai'),
+                "database": os.getenv('TIDB_DATABASE', 'test'),
                 "ssl_mode": os.getenv('TIDB_SSL_MODE', 'REQUIRED')
             }
         }
@@ -295,7 +295,7 @@ def create_database():
 
 # Global database manager instance for meeting management endpoints
 # db = DatabaseManager()
-db = DatabaseFactory.create_database(db_type='sqlite')
+db = DatabaseFactory.create_database(db_type='tidb')
 
 # New Pydantic models for meeting management with participant support
 class Participant(BaseModel):
@@ -355,7 +355,7 @@ class SummaryProcessor:
     def __init__(self):
         try:
             # Change this line to include db_type
-            self.db = DatabaseFactory.create_database(db_type='sqlite')
+            self.db = DatabaseFactory.create_database(db_type='tidb')
             logger.info("Initializing SummaryProcessor components")
             self.transcript_processor = TranscriptProcessor()
             logger.info("SummaryProcessor initialized successfully (core components)")

@@ -36,7 +36,7 @@ class DatabaseConfig:
     @staticmethod
     def get_config_from_env() -> Dict[str, Any]:
         """Get database configuration from environment variables"""
-        db_type = os.getenv('DATABASE_TYPE', 'sqlite').lower()
+        db_type = os.getenv('DATABASE_TYPE', 'tidb').lower()
 
         if db_type == 'tidb':
             return DatabaseConfig._get_tidb_config_from_env()
