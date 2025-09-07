@@ -11,12 +11,12 @@ eval-type-backport==0.2.2
 typing-inspection==0.4.1
 
 # New dependencies for tools integration
-mysql-connector-python==9.0.0
 requests==2.32.3
 httpx==0.27.0
 openai==1.51.2
 
 # TiDB Cluster
+mysql-connector-python==9.0.0
 sqlalchemy==2.0.23
 
 # Groq AI
@@ -45,9 +45,6 @@ websockets==12.0
 
 # Pymysql for MySQL/TiDB connection
 pymysql==1.0.3
-
-# Database - MySQL/TiDB using aiomysql for async support
-aiomysql==0.2.0
 
 # Additional dependencies for enhanced functionality
 sentence-transformers==2.3.1
