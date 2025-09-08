@@ -3,6 +3,9 @@ from typing import Dict, List
 from datetime import datetime
 import re
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 class TaskExtractor:
 
@@ -13,115 +16,221 @@ class TaskExtractor:
 
 
     async def extract_comprehensive_tasks(self, transcript: str, meeting_context: Dict = None) -> Dict:
+        """
+        UPDATED: Use unified single API call instead of multiple strategies
+        """
 
-        """Extract tasks with comprehensive analysis"""
-
-
-
-        # Handle null/empty input
         if not transcript or not transcript.strip():
-            return {
-                "tasks": [],
-                "task_summary": {
-                    "total_tasks": 0,
-                    "high_priority": 0,
-                    "with_deadlines": 0,
-                    "assigned": 0
-                },
-                "extraction_metadata": {
-                    "explicit_tasks_found": 0,
-                    "implicit_tasks_found": 0,
-                    "extracted_at": datetime.datetime.now().isoformat(),
-                    "error": "No transcript provided for task extraction"
-                }
-            }
+            return self._get_empty_result("No transcript provided")
+
+        # Use unified extraction method
+        logger.info("Starting unified task extraction (single API call)")
 
         try:
-            # Run multiple extraction strategies
+            result = await self.extract_tasks_unified(transcript, meeting_context)
 
-            tasks = [
-
-                self._extract_explicit_tasks(transcript),
-
-                self._extract_implicit_tasks(transcript),
-
-                self._analyze_task_dependencies(transcript),
-
-                self._prioritize_tasks(transcript)
-
-            ]
-
-
-
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-
-            # Handle potential exceptions from individual strategies
-            explicit_tasks = results[0] if not isinstance(results[0], Exception) else {"tasks": []}
-            implicit_tasks = results[1] if not isinstance(results[1], Exception) else {"tasks": []}
-            dependencies = results[2] if not isinstance(results[2], Exception) else {"dependencies": [], "critical_path": [], "parallel_tracks": []}
-            priorities = results[3] if not isinstance(results[3], Exception) else {"task_priorities": []}
-
-
-
-            # Merge and deduplicate tasks
-
-            all_tasks = self._merge_tasks(explicit_tasks, implicit_tasks)
-
-
-
-            # Apply dependencies and priorities
-
-            final_tasks = self._apply_task_metadata(all_tasks, dependencies, priorities)
-
-
-
-            result = {
-
-                "tasks": final_tasks,
-
-                "task_summary": {
-
-                    "total_tasks": len(final_tasks),
-
-                    "high_priority": len([t for t in final_tasks if t and t.get("priority") == "high"]),
-
-                    "with_deadlines": len([t for t in final_tasks if t and t.get("due_date")]),
-
-                    "assigned": len([t for t in final_tasks if t and t.get("assignee") != "Unassigned"])
-
-                },
-
-                "extraction_metadata": {
-
-                    "explicit_tasks_found": len(explicit_tasks.get("tasks", [])),
-
-                    "implicit_tasks_found": len(implicit_tasks.get("tasks", [])),
-
-                    "extracted_at": datetime.now().isoformat()
-
-                },
-
-                "summary": f"Extracted {len(final_tasks)} tasks from meeting transcript"
-
-            }
-
+            logger.info(f"Unified extraction completed: {len(result.get('tasks', []))} tasks found")
             return result
+
         except Exception as e:
+            logger.error(f"Unified extraction failed: {e}")
+            return self._get_empty_result(error=str(e))
+
+    async def extract_tasks_unified(self, transcript: str, meeting_context: Dict = None) -> Dict:
+        """
+        UNIFIED task extraction using single Groq API call
+        Replaces 4 separate API calls with 1 comprehensive call
+        """
+
+        if not transcript or not transcript.strip():
+            return self._get_empty_result()
+
+        # Build comprehensive system prompt
+        system_prompt = """You are an expert at analyzing meeting transcripts and extracting actionable tasks.
+
+        Your analysis must include ALL of the following:
+        1. EXPLICIT TASKS - Direct action items clearly mentioned
+        2. IMPLICIT TASKS - Tasks that are implied but not directly stated
+        3. TASK DEPENDENCIES - Relationships and dependencies between tasks
+        4. TASK PRIORITIES - Urgency and importance levels
+
+        Respond with valid JSON only, no additional text."""
+
+        # Build comprehensive user prompt
+        user_prompt = f"""
+        Analyze this meeting transcript comprehensively:
+
+        TRANSCRIPT:
+        {transcript}
+
+        MEETING CONTEXT:
+        {json.dumps(meeting_context or {}, indent=2)}
+
+        ANALYSIS REQUIREMENTS:
+
+        1. EXPLICIT TASKS - Find direct action items like:
+           - "I'll do X by Y date"
+           - "Can you handle Z"
+           - "We need to complete ABC"
+           - "Action item: XYZ"
+
+        2. IMPLICIT TASKS - Identify implied tasks like:
+           - Problems mentioned without solutions
+           - Requirements that need follow-up
+           - Decisions that require implementation
+
+        3. TASK DEPENDENCIES - Analyze relationships:
+           - Which tasks must be done before others
+           - Which can be done in parallel
+           - Critical path analysis
+
+        4. TASK PRIORITIES - Determine urgency:
+           - High: Blocking issues, urgent deadlines
+           - Medium: Important but not urgent
+           - Low: Nice-to-have improvements
+
+        Return comprehensive JSON:
+        {{
+            "tasks": [
+                {{
+                    "id": "task_1",
+                    "title": "Clear, actionable task title",
+                    "description": "Detailed description",
+                    "assignee": "Person assigned or 'Unassigned'",
+                    "due_date": "YYYY-MM-DD or null",
+                    "priority": "high|medium|low",
+                    "category": "explicit|implicit",
+                    "dependencies": ["task_2", "task_3"],
+                    "context": "Relevant transcript context",
+                    "confidence": 0.9
+                }}
+            ],
+            "task_summary": {{
+                "total_tasks": 0,
+                "explicit_tasks": 0,
+                "implicit_tasks": 0,
+                "high_priority": 0,
+                "with_deadlines": 0,
+                "with_dependencies": 0
+            }},
+            "dependencies": [
+                {{
+                    "task": "task_1",
+                    "depends_on": ["task_2"],
+                    "dependency_type": "blocking|sequential|parallel"
+                }}
+            ],
+            "extraction_metadata": {{
+                "model_used": "unified_extraction",
+                "confidence_score": 0.85,
+                "processing_method": "single_api_call",
+                "extracted_at": "{datetime.now().isoformat()}"
+            }}
+        }}
+        """
+
+        try:
+            # Single comprehensive API call
+            response = await self.ai_processor.call_ollama(user_prompt, system_prompt)
+
+            if not response or not response.strip():
+                return self._get_empty_result()
+
+            # Parse and validate response
+            result = self._parse_unified_response(response)
+
+            # Apply post-processing
+            final_tasks = self._post_process_unified_tasks(result, meeting_context)
+
             return {
-                "tasks": [],
-                "task_summary": {
-                    "total_tasks": 0,
-                    "high_priority": 0,
-                    "with_deadlines": 0,
-                    "assigned": 0
-                },
-                "extraction_metadata": {
-                    "explicit_tasks_found": 0,
-                    "implicit_tasks_found": 0,
-                    "extracted_at": datetime.now().isoformat(),
-                    "error": f"Task extraction failed: {str(e)}"
-                }
+                "tasks": final_tasks,
+                "task_summary": result.get("task_summary", {}),
+                "extraction_metadata": result.get("extraction_metadata", {})
             }
+
+        except Exception as e:
+            logger.error(f"Unified task extraction failed: {e}")
+            return self._get_empty_result(error=str(e))
+
+    def _parse_unified_response(self, response: str) -> Dict:
+        """Parse and validate unified API response"""
+        try:
+            # Extract JSON from response
+            json_str = self._extract_json_from_response(response)
+            if not json_str:
+                return {}
+
+            result = json.loads(json_str)
+
+            # Validate structure
+            if not isinstance(result, dict) or "tasks" not in result:
+                return {}
+
+            # Validate tasks
+            validated_tasks = []
+            for task in result.get("tasks", []):
+                if self._validate_task_structure(task):
+                    validated_tasks.append(task)
+
+            result["tasks"] = validated_tasks
+            return result
+
+        except (json.JSONDecodeError, Exception) as e:
+            logger.error(f"Failed to parse unified response: {e}")
+            return {}
+
+    def _validate_task_structure(self, task: Dict) -> bool:
+        """Validate individual task structure"""
+        required_fields = ["id", "title", "description", "priority"]
+        return (
+            isinstance(task, dict) and
+            all(field in task for field in required_fields) and
+            task.get("title", "").strip() != ""
+        )
+
+    def _post_process_unified_tasks(self, result: Dict, meeting_context: Dict = None) -> List[Dict]:
+        """Post-process unified extraction results"""
+        tasks = result.get("tasks", [])
+
+        # Apply meeting context
+        if meeting_context:
+            for task in tasks:
+                task["meeting_id"] = meeting_context.get("meeting_id", "unknown")
+                task["meeting_title"] = meeting_context.get("title", "Meeting")
+
+        # Apply dependency logic
+        dependencies = result.get("dependencies", [])
+        for task in tasks:
+            task["dependencies"] = self._resolve_dependencies(task, dependencies)
+
+        return tasks
+
+    def _resolve_dependencies(self, task: Dict, dependencies: List[Dict]) -> List[str]:
+        """Resolve task dependencies"""
+        task_dependencies = []
+        for dep in dependencies:
+            if dep.get("task") == task.get("id"):
+                task_dependencies.extend(dep.get("depends_on", []))
+        return task_dependencies
+
+    def _get_empty_result(self, error: str = None) -> Dict:
+        """Return empty result structure"""
+        return {
+            "tasks": [],
+            "task_summary": {
+                "total_tasks": 0,
+                "explicit_tasks": 0,
+                "implicit_tasks": 0,
+                "high_priority": 0,
+                "with_deadlines": 0,
+                "with_dependencies": 0
+            },
+            "extraction_metadata": {
+                "error": error,
+                "extracted_at": datetime.now().isoformat(),
+                "processing_method": "unified_single_call"
+            }
+        }
 
 
 
@@ -591,16 +700,16 @@ class TaskExtractor:
         """Extract JSON from AI response that might contain extra text"""
         if not response:
             return ""
-        
+
         # Look for JSON object starting with { and ending with }
         start_idx = response.find('{')
         if start_idx == -1:
             return ""
-        
+
         # Find the matching closing brace
         brace_count = 0
         end_idx = -1
-        
+
         for i in range(start_idx, len(response)):
             if response[i] == '{':
                 brace_count += 1
@@ -609,10 +718,10 @@ class TaskExtractor:
                 if brace_count == 0:
                     end_idx = i
                     break
-        
+
         if end_idx == -1:
             return ""
-        
+
         return response[start_idx:end_idx + 1]
 
     def _tasks_similar(self, title1: str, title2: str, threshold: float = 0.7) -> bool:

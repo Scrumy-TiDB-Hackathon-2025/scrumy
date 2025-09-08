@@ -1,6 +1,7 @@
 """
 WebSocket server for real-time audio processing with participant identification
 Handles Chrome extension communication for live transcription and AI processing
+Enhanced with Phase 3 session management for timeout-based processing
 """
 
 import asyncio
@@ -26,8 +27,10 @@ from app.meeting_buffer import MeetingBuffer, TranscriptChunk, BatchProcessor
 from app.audio_buffer import AudioBufferManager, SessionAudioBuffer
 from app.pipeline_logger import PipelineLogger
 from app.background_tasks import background_manager
+from app.session_manager import session_manager
 import subprocess
 import time
+import uuid
 
 # Import WebSocket events constants and monitoring
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'shared'))
@@ -403,7 +406,7 @@ class MeetingSession:
             return {'speakers': [], 'error': str(e)}
 
 class WebSocketManager:
-    """Manage WebSocket connections and sessions"""
+    """Manage WebSocket connections and sessions with Phase 3 session management"""
 
     def __init__(self):
         self.active_connections: Dict[WebSocket, Dict] = {}
@@ -412,6 +415,7 @@ class WebSocketManager:
         self.audio_buffer_manager = AudioBufferManager()
         self.batch_processor = None  # Initialized when first session is created
         self.processing_locks: Dict[str, threading.Lock] = {}  # Prevent race conditions
+        self.websocket_to_session: Dict[WebSocket, str] = {}  # Track websocket to session mapping
 
 
 
@@ -457,7 +461,7 @@ class WebSocketManager:
             self.processing_locks[session_id].release()
 
     async def _broadcast_transcription_result(self, session_id: str, transcription_result: Dict):
-        """Broadcast transcription result to all connections for a session"""
+        """Broadcast transcription result to all connections for a session with Phase 3 session updates"""
         try:
             # Find session for duplicate checking
             session = self.meeting_sessions.get(session_id)
@@ -476,12 +480,22 @@ class WebSocketManager:
             if len(session.buffer.recent_transcripts) > session.buffer.max_recent_transcripts:
                 session.buffer.recent_transcripts.pop(0)  # Remove oldest
 
-            # Find connections for this session
+            # Update session activity with transcript segment
+            transcript_segment = {
+                'text': transcript_text,
+                'timestamp': transcription_result.get('timestamp', time.time()),
+                'confidence': transcription_result.get('confidence', 0.0),
+                'trigger': 'timeout'
+            }
+
+            # Find connections for this session and update activity
             target_connections = []
             for websocket, connection_info in self.active_connections.items():
                 connection_session = connection_info.get('meeting_session')
                 if connection_session and connection_session.meeting_id == session_id:
                     target_connections.append(websocket)
+                    # Update session activity for this websocket
+                    await self._update_session_activity(websocket, transcript_segment)
 
             # Send to all connections
             for websocket in target_connections:
@@ -533,11 +547,23 @@ class WebSocketManager:
             'timestamp': datetime.now().isoformat()
         })
 
-    def disconnect(self, websocket: WebSocket):
-        """Handle WebSocket disconnection"""
+    async def disconnect(self, websocket: WebSocket):
+        """Handle WebSocket disconnection with Phase 3 session management"""
         if websocket in self.active_connections:
             connection_info = self.active_connections[websocket]
+            session_id = self.websocket_to_session.get(websocket)
+
             logger.info(f"WebSocket disconnected: {connection_info.get('client_info', {})}")
+
+            # Handle session disconnection if session exists
+            if session_id:
+                disconnect_result = await session_manager.handle_disconnect(session_id)
+                logger.info(f"Session disconnect handled: {disconnect_result}")
+
+                # Remove websocket mapping
+                if websocket in self.websocket_to_session:
+                    del self.websocket_to_session[websocket]
+
             del self.active_connections[websocket]
 
     async def send_message(self, websocket: WebSocket, message: Dict):
@@ -563,7 +589,7 @@ class WebSocketManager:
         })
 
     async def handle_audio_chunk(self, websocket: WebSocket, message: Dict):
-        """Handle incoming audio chunk"""
+        """Handle incoming audio chunk with Phase 3 session management"""
         try:
             audio_data = message.get('data')
             timestamp = message.get('timestamp')
@@ -578,6 +604,9 @@ class WebSocketManager:
                 meeting_url = message.get('meetingUrl', 'unknown')
                 participants = message.get('participants', [])
                 participant_count = message.get('participant_count', 0)
+
+                # Register or update session with session manager
+                await self._handle_session_registration(websocket, message, participants)
                 metadata = message.get('metadata', {})
             else:
                 # Legacy format
@@ -1095,6 +1124,62 @@ class WebSocketManager:
         except Exception as e:
             logger.error(f"Error mapping speaker name to ID: {e}")
             return None
+
+    async def _handle_session_registration(self, websocket: WebSocket, message: Dict, participants: List[str]):
+        """Handle session registration with Phase 3 session manager"""
+        try:
+            # Generate session and meeting IDs
+            websocket_id = str(id(websocket))
+            meeting_url = message.get('meetingUrl', 'unknown')
+            platform = message.get('platform', 'unknown')
+
+            # Create meeting_id from URL or generate unique one
+            if meeting_url and meeting_url != 'unknown':
+                meeting_id = f"{platform}_{hash(meeting_url) % 100000}"
+            else:
+                meeting_id = f"meeting_{int(time.time())}"
+
+            session_id = f"session_{websocket_id}_{int(time.time())}"
+
+            # Register with session manager
+            registration_result = await session_manager.register_session(
+                session_id=session_id,
+                meeting_id=meeting_id,
+                websocket_id=websocket_id,
+                participants=participants
+            )
+
+            # Track websocket to session mapping
+            self.websocket_to_session[websocket] = session_id
+
+            logger.info(f"Session registration result: {registration_result}")
+
+            # Send session info to client
+            await self.send_message(websocket, {
+                'type': 'SESSION_REGISTERED',
+                'data': {
+                    'sessionId': session_id,
+                    'meetingId': meeting_id,
+                    'isNewSession': registration_result.get('is_new_session', True),
+                    'reconnectionCount': registration_result.get('reconnection_count', 0)
+                }
+            })
+
+        except Exception as e:
+            logger.error(f"Error in session registration: {e}")
+
+    async def _update_session_activity(self, websocket: WebSocket, transcript_segment: Optional[Dict] = None, audio_duration: Optional[float] = None):
+        """Update session activity with session manager"""
+        try:
+            session_id = self.websocket_to_session.get(websocket)
+            if session_id:
+                await session_manager.update_session_activity(
+                    session_id=session_id,
+                    transcript_segment=transcript_segment,
+                    audio_duration=audio_duration
+                )
+        except Exception as e:
+            logger.error(f"Error updating session activity: {e}")
 
 # Global WebSocket manager instance
 websocket_manager = WebSocketManager()
