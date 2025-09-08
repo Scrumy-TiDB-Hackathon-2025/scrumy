@@ -5,6 +5,7 @@ from groq import AsyncGroq
 import logging
 import json
 import uuid
+import os
 from .tidb_vector_store import TiDBVectorStore
 from sentence_transformers import SentenceTransformer
 import numpy as np
@@ -15,10 +16,15 @@ class ChatBot:
     def __init__(self, vector_store: TiDBVectorStore, model_name: str = "llama-3.3-70b-versatile"):
         self.vector_store = vector_store
         self.model_name = model_name
-        # Initialize Groq client with API key
-        self.client = AsyncGroq(
-            api_key="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"
-        )
+        
+        # Get API key from environment variable
+        groq_api_key = os.getenv('GROQ_API_KEY')
+        if not groq_api_key:
+            raise ValueError("GROQ_API_KEY environment variable is not set")
+            
+        # Initialize Groq client with API key from environment
+        self.client = AsyncGroq(api_key=groq_api_key)
+        
         # Initialize sentence transformer for embeddings
         self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
         self.similarity_threshold = 0.7
