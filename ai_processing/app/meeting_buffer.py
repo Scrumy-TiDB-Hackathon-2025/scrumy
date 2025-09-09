@@ -23,6 +23,7 @@ class TranscriptChunk:
     confidence: float
     chunk_index: int
     speaker: Optional[str] = None  # Filled by batch processing
+    speaker_info: Optional[Dict] = None  # Optional speaker info (for compatibility)
 
 class MeetingBuffer:
     """Buffer transcript chunks for batch processing"""
