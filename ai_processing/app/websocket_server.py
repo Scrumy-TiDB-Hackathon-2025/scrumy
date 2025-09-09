@@ -173,8 +173,8 @@ class AudioProcessor:
                 rms = np.sqrt(np.mean(audio_data.astype(np.float64) ** 2))
                 duration = len(audio_data) / sample_rate
 
-                # Determine if likely silence (improved thresholds)
-                is_likely_silence = max_amplitude < 500 or rms < 50  # Better thresholds for 16-bit audio
+                # Determine if likely silence (more permissive thresholds)
+                is_likely_silence = max_amplitude < 100 or rms < 15  # More permissive for Chrome extension audio
 
                 return {
                     'sample_rate': sample_rate,
