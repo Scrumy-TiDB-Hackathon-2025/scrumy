@@ -870,7 +870,8 @@ let websocket = null;
 let isShuttingDown = false; // Flag to prevent reconnection during shutdown
 
 function initializeWebSocket() {
-  if (websocket && websocket.readyState === WebSocket.OPEN) {
+  if (websocket && (websocket.readyState === WebSocket.OPEN || websocket.readyState === WebSocket.CONNECTING)) {
+    console.log("🔌 WebSocket already connected or connecting, skipping...");
     return;
   }
 
@@ -939,13 +940,14 @@ function initializeWebSocket() {
     console.error("❌ WebSocket error:", error);
   };
 
-  websocket.onclose = () => {
-    console.log("🔌 WebSocket disconnected");
-    // Only reconnect if not shutting down
-    if (!isShuttingDown) {
-      setTimeout(initializeWebSocket, 5000);
+  websocket.onclose = (event) => {
+    console.log("🔌 WebSocket disconnected", event.code, event.reason);
+    // Only reconnect if not shutting down and not a normal closure
+    if (!isShuttingDown && event.code !== 1000) {
+      console.log("🔄 Reconnecting WebSocket in 3 seconds...");
+      setTimeout(initializeWebSocket, 3000);
     } else {
-      console.log("🚫 Skipping reconnect - recording stopped");
+      console.log("🚫 Skipping reconnect - normal closure or recording stopped");
     }
   };
 }
@@ -963,10 +965,14 @@ function sendAudioViaWebSocket(audioData, timestamp) {
     }
 
     console.log(
-      `[Content] WebSocket not connected, retry ${wsRetryCount + 1}/${MAX_WS_RETRIES}`,
+      `[Content] WebSocket not connected (state: ${websocket?.readyState}), retry ${wsRetryCount + 1}/${MAX_WS_RETRIES}`,
     );
     wsRetryCount++;
-    initializeWebSocket();
+    
+    // Don't initialize if already connecting
+    if (!websocket || websocket.readyState === WebSocket.CLOSED) {
+      initializeWebSocket();
+    }
 
     // Only retry if we're still recording
     if (isRecordingViaHelper) {

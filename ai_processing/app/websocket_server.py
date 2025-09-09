@@ -72,7 +72,7 @@ class AudioProcessor:
     """Handle audio chunk processing and transcription"""
 
     def __init__(self):
-        self.whisper_model_path = os.getenv('WHISPER_MODEL_PATH', './whisper.cpp/models/ggml-base.en.bin')
+        self.whisper_model_path = os.getenv('WHISPER_MODEL_PATH', './whisper.cpp/models/ggml-medium.en.bin')
         self.whisper_executable = os.getenv('WHISPER_EXECUTABLE', './whisper.cpp/build/bin/whisper-cli')
 
     async def process_audio_chunk(self, audio_data: bytes, metadata: Dict) -> Dict:
@@ -539,7 +539,7 @@ class WebSocketManager:
         self.active_connections[websocket] = connection_info
         logger.info(f"New WebSocket connection: {client_info}")
 
-        # Send handshake acknowledgment
+        # Send handshake acknowledgment only once
         await self.send_message(websocket, {
             'type': 'HANDSHAKE_ACK',
             'serverVersion': '1.0',
@@ -605,8 +605,9 @@ class WebSocketManager:
                 participants = message.get('participants', [])
                 participant_count = message.get('participant_count', 0)
 
-                # Register or update session with session manager
-                await self._handle_session_registration(websocket, message, participants)
+                # Only register session if not already registered for this websocket
+                if websocket not in self.websocket_to_session:
+                    await self._handle_session_registration(websocket, message, participants)
                 metadata = message.get('metadata', {})
             else:
                 # Legacy format
@@ -851,6 +852,7 @@ class WebSocketManager:
         data = message.get('data', {})
 
         logger.info(f"Meeting event: {event_type}")
+        print(f"📋 Meeting event received: {event_type} with data: {data}")
 
         # Handle different event types
         if event_type == 'meeting_started':
@@ -862,12 +864,13 @@ class WebSocketManager:
         elif event_type in ['ended', 'meeting_ended']:
             print(f"\n🏁 Meeting ended - starting final processing...")
 
-            # Check if this is a buffer flush completion signal
-            buffer_flush_complete = data.get('bufferFlushComplete', False)
+            # Check if this is a buffer flush completion signal (support both formats)
+            buffer_flush_complete = data.get('bufferFlushComplete', data.get('buffer_flush_complete', False))
 
             if not buffer_flush_complete:
                 # Legacy behavior or partial end signal - wait for buffer flush
                 print("⏳ Meeting end signal received - waiting for buffer flush completion...")
+                print(f"📋 Data received: {data}")
                 await self.send_message(websocket, {
                     'type': 'PROCESSING_STATUS',
                     'data': {
@@ -985,6 +988,10 @@ class WebSocketManager:
         try:
             print(f"🎯 Starting meeting summary generation for {session.meeting_id}")
 
+            print(f"📝 Session transcript chunks: {len(session.transcript_chunks)}")
+            print(f"📝 Cumulative transcript length: {len(session.cumulative_transcript)} characters")
+            print(f"📝 Transcript preview: '{session.cumulative_transcript[:200]}...'")
+            
             if not session.cumulative_transcript.strip():
                 print(f"⚠️ No transcript content available - skipping summary")
                 logger.warning("No transcript available for summary")
