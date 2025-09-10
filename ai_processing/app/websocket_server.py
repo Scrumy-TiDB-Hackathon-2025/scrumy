@@ -28,9 +28,11 @@ from app.audio_buffer import AudioBufferManager, SessionAudioBuffer
 from app.pipeline_logger import PipelineLogger
 from app.background_tasks import background_manager
 from app.session_manager import session_manager
+from app.database_interface import DatabaseFactory
 import subprocess
 import time
 import uuid
+import os
 
 # Import WebSocket events constants and monitoring
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'shared'))
@@ -416,6 +418,36 @@ class WebSocketManager:
         self.batch_processor = None  # Initialized when first session is created
         self.processing_locks: Dict[str, threading.Lock] = {}  # Prevent race conditions
         self.websocket_to_session: Dict[WebSocket, str] = {}  # Track websocket to session mapping
+        
+        # Initialize database using same factory as main app for TiDB compatibility
+        self.db = self._init_database()
+
+    def _init_database(self):
+        """Initialize database using same configuration as main app"""
+        try:
+            db_type = os.getenv('DATABASE_TYPE', 'sqlite').lower()
+            
+            if db_type == 'tidb':
+                config = {
+                    "type": "tidb",
+                    "connection": {
+                        "host": os.getenv('TIDB_HOST', 'localhost'),
+                        "port": int(os.getenv('TIDB_PORT', 4000)),
+                        "user": os.getenv('TIDB_USER'),
+                        "password": os.getenv('TIDB_PASSWORD'),
+                        "database": os.getenv('TIDB_DATABASE', 'scrumy_ai'),
+                        "ssl_mode": os.getenv('TIDB_SSL_MODE', 'REQUIRED')
+                    }
+                }
+                db = DatabaseFactory.create_from_config(config)
+            else:
+                db = DatabaseFactory.create_database(db_type='sqlite')
+                
+            logger.info(f"WebSocket server using {db_type.upper()} database")
+            return db
+        except Exception as e:
+            logger.warning(f"Database initialization failed: {e}")
+            return None
 
 
 
@@ -627,6 +659,14 @@ class WebSocketManager:
             if meeting_id not in self.meeting_sessions:
                 self.meeting_sessions[meeting_id] = MeetingSession(meeting_id, platform)
                 logger.info(f"Created new meeting session: {meeting_id}")
+                
+                # Save meeting to database
+                if self.db:
+                    try:
+                        await self.db.save_meeting(meeting_id, f"Meeting {platform} {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+                        logger.info(f"💾 Saved meeting to database: {meeting_id}")
+                    except Exception as db_error:
+                        logger.error(f"Failed to save meeting to database: {db_error}")
 
             session = self.meeting_sessions[meeting_id]
             session.meeting_url = meeting_url
@@ -728,6 +768,21 @@ class WebSocketManager:
 
             # Add to session
             session.add_transcript_chunk(transcription_result)
+            
+            # Save transcript to database
+            if self.db and transcription_result.get('text') and transcription_result['text'] not in ['[SILENCE_DETECTED]', '[BLANK_AUDIO]', '[PROCESSING_ERROR]', '[WHISPER_ERROR]']:
+                try:
+                    await self.db.save_meeting_transcript(
+                        meeting_id=meeting_id,
+                        transcript=transcription_result['text'],
+                        timestamp=transcription_result.get('timestamp', datetime.now().isoformat()),
+                        summary="",
+                        action_items="",
+                        key_points=""
+                    )
+                    logger.info(f"💾 Saved transcript to database: {transcription_result['text'][:50]}...")
+                except Exception as db_error:
+                    logger.error(f"Failed to save transcript to database: {db_error}")
 
             # Add to buffer (no immediate AI processing)
             if transcription_result.get('text'):
