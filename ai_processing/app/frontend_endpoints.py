@@ -49,12 +49,14 @@ except Exception as e:
 async def get_tasks(meeting_id: Optional[str] = None):
     """Get all tasks or tasks for a specific meeting"""
     try:
-        if db:
+        if db and hasattr(db, 'get_all_tasks'):
             # Get tasks from database
-            if meeting_id:
+            if meeting_id and hasattr(db, 'get_tasks_by_meeting'):
                 tasks = await db.get_tasks_by_meeting(meeting_id)
-            else:
+            elif hasattr(db, 'get_all_tasks'):
                 tasks = await db.get_all_tasks()
+            else:
+                tasks = []
             
             return {
                 "status": "success",
@@ -105,7 +107,7 @@ async def get_tasks(meeting_id: Optional[str] = None):
 async def get_transcript(meeting_id: str):
     """Get transcript for a specific meeting"""
     try:
-        if db:
+        if db and hasattr(db, 'get_meeting_transcript'):
             # Get transcript from database
             transcript_data = await db.get_meeting_transcript(meeting_id)
             
@@ -161,7 +163,11 @@ async def get_meetings_list():
             meetings = await db.get_all_meetings()
             formatted_meetings = []
             for meeting in meetings:
-                tasks = await db.get_tasks_by_meeting(meeting.get('id', ''))
+                # Get tasks if method exists, otherwise default to 0
+                if hasattr(db, 'get_tasks_by_meeting'):
+                    tasks = await db.get_tasks_by_meeting(meeting.get('id', ''))
+                else:
+                    tasks = []
                 formatted_meetings.append({
                     "id": meeting.get('id'),
                     "title": meeting.get('title', 'Untitled Meeting'),
@@ -203,7 +209,7 @@ async def get_meetings_list():
 async def get_meeting_detail(meeting_id: str):
     """Get meeting detail with transcript for meeting detail page"""
     try:
-        if db:
+        if db and hasattr(db, 'get_meeting_transcript'):
             transcript_data = await db.get_meeting_transcript(meeting_id)
             if transcript_data:
                 return {
