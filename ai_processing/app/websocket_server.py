@@ -769,20 +769,8 @@ class WebSocketManager:
             # Add to session
             session.add_transcript_chunk(transcription_result)
             
-            # Save transcript to database
-            if self.db and transcription_result.get('text') and transcription_result['text'] not in ['[SILENCE_DETECTED]', '[BLANK_AUDIO]', '[PROCESSING_ERROR]', '[WHISPER_ERROR]']:
-                try:
-                    await self.db.save_meeting_transcript(
-                        meeting_id=meeting_id,
-                        transcript=transcription_result['text'],
-                        timestamp=transcription_result.get('timestamp', datetime.now().isoformat()),
-                        summary="",
-                        action_items="",
-                        key_points=""
-                    )
-                    logger.info(f"💾 Saved transcript to database: {transcription_result['text'][:50]}...")
-                except Exception as db_error:
-                    logger.error(f"Failed to save transcript to database: {db_error}")
+            # Note: Individual transcript chunks are not saved here
+            # Full transcript is saved before AI processing in _generate_meeting_summary()
 
             # Add to buffer (no immediate AI processing)
             if transcription_result.get('text'):
@@ -1053,6 +1041,21 @@ class WebSocketManager:
                 return
 
             print(f"📝 Transcript ready: {len(session.cumulative_transcript)} characters")
+
+            # Save full transcript to database before AI processing
+            if self.db and session.cumulative_transcript.strip():
+                try:
+                    await self.db.save_meeting_transcript(
+                        meeting_id=session.meeting_id,
+                        transcript=session.cumulative_transcript,
+                        timestamp=datetime.now().isoformat(),
+                        summary="",
+                        action_items="",
+                        key_points=""
+                    )
+                    logger.info(f"💾 Saved full transcript to database before AI processing: {len(session.cumulative_transcript)} chars")
+                except Exception as db_error:
+                    logger.error(f"Failed to save full transcript: {db_error}")
 
             # Try to generate AI summary and tasks (may fail if no API key)
             summary = {}
