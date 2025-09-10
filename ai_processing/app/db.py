@@ -3,6 +3,9 @@ import json
 from datetime import datetime
 from typing import Optional, Dict
 import logging
+from sentence_transformers import SentenceTransformer
+from shared.db_config import SharedDBConfig
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +19,8 @@ class DatabaseManager:
             'db': db,
             'charset': 'utf8mb4'
         }
+        self.vector_store_engine = SharedDBConfig.get_engine()
+        self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
 
     async def _init_db(self):
         """Initialize the database with required tables"""
@@ -292,27 +297,54 @@ class DatabaseManager:
             logger.error(f"Error saving meeting: {str(e)}")
             raise
 
-    async def save_meeting_transcript(self, meeting_id: str, transcript: str, timestamp: str, summary: str = "", action_items: str = "", key_points: str = ""):
-        """Save a transcript for a meeting"""
+    async def save_to_vector_store(self, meeting_id: str, title: str, content: str, metadata: dict = None):
+        """Save transcript content to vector store"""
         try:
-            pool = await self._get_pool()
-            try:
-                async with pool.acquire() as conn:
-                    async with conn.cursor() as cursor:
-                        # Generate a unique ID for the transcript
-                        transcript_id = f"{meeting_id}_{timestamp}"
-                        # Save transcript
-                        await cursor.execute("""
-                            INSERT INTO transcripts (
-                                id, meeting_id, transcript, timestamp, summary, action_items, key_points
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                        """, (transcript_id, meeting_id, transcript, timestamp, summary, action_items, key_points))
-                        
-                        await conn.commit()
-                        return True
-            finally:
-                pool.close()
-                await pool.wait_closed()
+            # Generate embedding
+            embedding = self.embedding_model.encode(content).tolist()
+            
+            # Prepare metadata
+            meta = {
+                "meeting_id": meeting_id,
+                "title": title,
+                "type": "meeting_transcript",
+                **(metadata or {})
+            }
+            
+            # Execute vector store insertion
+            with self.vector_store_engine.connect() as conn:
+                conn.execute("""
+                    INSERT INTO vector_store (text, embedding, metadata)
+                    VALUES (%s, %s, %s)
+                """, (content, json.dumps(embedding), json.dumps(meta)))
+                conn.commit()
+            
+            return True
+        except Exception as e:
+            logger.error(f"Error saving to vector store: {e}")
+            return False
+
+    async def save_meeting_transcript(self, meeting_id: str, transcript: str, timestamp: str, 
+                                    summary: str = "", action_items: str = "", key_points: str = ""):
+        """Save transcript and store in vector store"""
+        try:
+            # Save to regular database
+            # ...existing code...
+
+            # Save to vector store
+            await self.save_to_vector_store(
+                meeting_id=meeting_id,
+                title=f"Meeting Transcript {timestamp}",
+                content=transcript,
+                metadata={
+                    "summary": summary,
+                    "action_items": action_items,
+                    "key_points": key_points,
+                    "timestamp": timestamp
+                }
+            )
+            
+            return True
         except Exception as e:
             logger.error(f"Error saving transcript: {str(e)}")
             raise

@@ -3,47 +3,51 @@ import logging
 from sqlalchemy import create_engine, text
 
 logger = logging.getLogger(__name__)
-
 class TiDBConnection:
-    """TiDB Connection Manager for ChatBot"""
+    """TiDB Connection Manager"""
 
     def __init__(self):
-        self.connection_string = (
-            "mysql+pymysql://WJcVZ6rUiG4pBPB.root:{password}"
-            "@gateway01.eu-central-1.prod.aws.tidbcloud.com:4000/chatbot"
-        )
-        self.engine = None
+        # Read environment variables
+        host = os.getenv("CHATBOT_TIDB_HOST")
+        port = os.getenv("CHATBOT_TIDB_PORT", "4000")
+        user = os.getenv("CHATBOT_TIDB_USER")
+        password = os.getenv("CHATBOT_TIDB_PASSWORD")
+        database = os.getenv("CHATBOT_TIDB_DATABASE")
 
-    def initialize(self, password: str) -> bool:
-        """Initialize TiDB connection with password"""
+        if not all([host, port, user, password, database]):
+            raise ValueError("Missing required CHATBOT_TIDB_* environment variables")
+
+        self.connection_string = (
+            f"mysql+pymysql://{user}:{password}"
+            f"@{host}:{port}/{database}"
+        )
+
+        self.engine = create_engine(
+            self.connection_string,
+            pool_size=5,
+            max_overflow=10,
+            pool_pre_ping=True,
+            echo=False,
+            connect_args={
+                "ssl": {"ca": "/etc/ssl/cert.pem"},
+                "charset": "utf8mb4"
+            }
+        )
+
+    def initialize(self) -> bool:
+        """Initialize TiDB connection and ensure schema exists"""
         try:
-            conn_str = self.connection_string.format(password=password)
-            self.engine = create_engine(
-                conn_str,
-                pool_size=5,
-                max_overflow=10,
-                pool_pre_ping=True,
-                echo=False,
-                connect_args={
-                    "ssl": {
-                        "ca": "/etc/ssl/cert.pem"
-                    },
-                    "charset": "utf8mb4"
-                }
-            )
-            # Test connection
             with self.engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
                 self._ensure_schema_exists(conn)
-
-            logger.info("Successfully connected to TiDB")
+            logger.info("✅ Connected to TiDB (chatbot)")
             return True
         except Exception as e:
-            logger.error(f"Failed to connect to TiDB: {e}")
+            logger.error(f"❌ Failed to connect to TiDB (chatbot): {e}")
             return False
 
     def _ensure_schema_exists(self, conn):
-        """Ensure required tables exist"""
+        """Ensure required tables exist in chatbot DB"""
         try:
             conn.execute(text("""
             CREATE TABLE IF NOT EXISTS vector_store (
@@ -68,9 +72,9 @@ class TiDBConnection:
             """))
 
             conn.commit()
-            logger.info("Database schema ensured")
+            logger.info("✅ Schema ensured for chatbot DB")
         except Exception as e:
-            logger.error(f"Error ensuring schema: {e}")
+            logger.error(f"❌ Error ensuring schema: {e}")
             raise
 
     def get_engine(self):

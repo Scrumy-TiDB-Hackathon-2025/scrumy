@@ -23,8 +23,8 @@ logging.basicConfig(
 def main():
     """Run the FastAPI application"""
     try:
-        host = os.getenv('HOST', '0.0.0.0')
-        port = int(os.getenv('PORT', 8001))
+        host = os.getenv('CHATBOT_TIDB_HOST', '0.0.0.0')
+        port = int(os.getenv('CHATBOT_TIDB_PORT', 8001))
         
         print(f"🚀 Starting AI Chatbot API on {host}:{port}")
         print("📊 Features enabled:")

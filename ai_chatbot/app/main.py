@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from .chatbot import ChatBot
 from .tidb_vector_store import TiDBVectorStore
 from .tidb_connection import TiDBConnection
+from .utils.key_manager import GroqKeyManager
 from sqlalchemy import text
 
 # Load environment variables
@@ -30,14 +31,17 @@ app.add_middleware(
 
 # Initialize TiDB connection
 tidb_conn = TiDBConnection()
-if not tidb_conn.initialize(os.getenv('TIDB_PASSWORD', 'FVb22ltRTXizDQVg')):
+if not tidb_conn.initialize():
     raise RuntimeError("Failed to initialize TiDB connection")
 
 # Initialize vector store
 vector_store = TiDBVectorStore(tidb_conn.get_engine())
 
-# Initialize chatbot with Groq
-chatbot = ChatBot(vector_store, model_name="llama-3.3-70b-versatile")
+# Initialize key manager
+key_manager = GroqKeyManager()
+
+# Initialize chatbot with Groq and key manager
+chatbot = ChatBot(vector_store, model_name="llama-3.3-70b-versatile", key_manager=key_manager)
 
 # Initialize knowledge base on startup
 @app.on_event("startup")
@@ -136,6 +140,12 @@ async def health_check():
         }
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Service unhealthy: {str(e)}")
+
+# Add a new endpoint to get key usage statistics
+@app.get("/stats/keys")
+async def get_key_stats():
+    """Get usage statistics for API keys"""
+    return {"keys": key_manager.get_key_stats()}
 
 if __name__ == "__main__":
     import uvicorn
