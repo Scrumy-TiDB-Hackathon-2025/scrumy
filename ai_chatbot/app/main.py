@@ -93,11 +93,11 @@ async def add_knowledge(request: KnowledgeRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/knowledge/search")
-async def search_knowledge(query: str, top_k: int = 5):
+async def search_knowledge(query: str, session_id: Optional[str] = None, top_k: int = 5):
     """Search the knowledge base"""
     try:
-        results = await chatbot.search_knowledge(query, top_k)
-        return {"results": results}
+        results = await chatbot.search_knowledge(query, top_k, session_id)
+        return results
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -149,4 +149,4 @@ async def get_key_stats():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    uvicorn.run(app, host="127.0.0.1", port=8001)

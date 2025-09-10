@@ -142,41 +142,52 @@ class ChatBot:
                                history: List[Dict]) -> str:
         """Generate response using Groq with retrieved context"""
         try:
-            # Get client with current API key
             client = await self._get_groq_client()
             
-            # Build context from knowledge base
-            knowledge_context = self._format_knowledge_context(similar_docs)
+            # Filter out irrelevant docs based on similarity threshold
+            relevant_docs = [doc for doc in similar_docs if doc.get('similarity', 0) > self.similarity_threshold]
+            knowledge_context = self._format_knowledge_context(relevant_docs)
             
-            # Build conversation history
-            context_messages = self._format_history(history)
-            
-            # Create system prompt with context
-            system_prompt = """You are a helpful AI assistant with access to meeting transcripts and general knowledge. 
-When providing information from meetings, mention the meeting date/time if available.
-Use the provided context information to answer questions accurately. 
-If the context doesn't contain relevant information, answer based on your general knowledge.
-Be concise and helpful."""
-            
-            if knowledge_context:
-                system_prompt += f"\n\nRelevant context:\n{knowledge_context}"
-            
-            # Build messages for Groq
-            messages = [{"role": "system", "content": system_prompt}]
-            messages.extend(context_messages)
-            messages.append({"role": "user", "content": message})
+            system_prompt = """You are Scrumy, an AI-powered project management assistant. 
+Format your responses as follows:
+
+**Analysis of Available Data**
+
+[Provide a clear, concise analysis of the relevant information from the knowledge base]
+
+**Key Points**
+- [List key points extracted from the data]
+- [Include only information that directly answers the user's question]
+
+**Additional Context**
+[If applicable, provide relevant project management context]
+
+If the data doesn't contain information relevant to the question, clearly state:
+"I don't have enough information in the available data to answer this question accurately."
+
+Be concise and professional. Never mention source numbers or irrelevant information."""
+
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "system", "content": f"Available context:\n{knowledge_context}" if knowledge_context else "No relevant data found."},
+                {"role": "user", "content": message}
+            ]
+
+            # Add historical context if available
+            if history:
+                messages[1:1] = self._format_history(history)
             
             completion = await client.chat.completions.create(
                 messages=messages,
                 model=self.model_name,
-                temperature=0.7,
+                temperature=0.3,  # Lower temperature for more consistent formatting
                 max_tokens=1024
             )
             
             return completion.choices[0].message.content
             
         except Exception as e:
-            logger.error(f"Error generating response with Groq: {e}")
+            logger.error(f"Error generating response: {e}")
             return "I'm having trouble generating a response right now. Please try again."
 
     async def add_knowledge(self, content: str, metadata: Optional[Dict] = None) -> bool:
@@ -192,14 +203,29 @@ Be concise and helpful."""
             logger.error(f"Error adding knowledge: {e}")
             return False
 
-    async def search_knowledge(self, query: str, top_k: int = 5) -> List[Dict]:
-        """Search the knowledge base"""
+    async def search_knowledge(self, query: str, top_k: int = 5, session_id: str = None) -> Dict:
+        """Search the knowledge base and generate a response"""
         try:
             # Generate embedding for the query
             query_embedding = self.embedding_model.encode(query).tolist()
             
             # Search vector store
-            return await self.vector_store.similarity_search(query_embedding, top_k)
+            similar_docs = await self.vector_store.similarity_search(query_embedding, top_k)
+            
+            # Get chat history if session_id is provided
+            history = self.vector_store.get_chat_history(session_id, limit=5) if session_id else []
+            
+            # Generate response using the search results
+            response = await self._generate_response(query, similar_docs, history)
+            
+            return {
+                "response": response,
+                "sources": len(similar_docs)
+            }
         except Exception as e:
             logger.error(f"Error searching knowledge: {e}")
-            return []
+            return {
+                "response": "I encountered an error while searching the knowledge base.",
+                "sources": 0,
+                "metadata": {"error": str(e)}
+            }
