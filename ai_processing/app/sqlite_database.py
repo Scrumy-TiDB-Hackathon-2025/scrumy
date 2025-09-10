@@ -652,6 +652,69 @@ class SQLiteDatabase(DatabaseInterface):
             logger.error(f"Error clearing all data: {e}")
             return False
 
+    async def get_all_tasks(self) -> List[Dict]:
+        """Get all tasks from database"""
+        # SQLite doesn't have a tasks table yet, return empty list
+        return []
+
+    async def get_tasks_by_meeting(self, meeting_id: str) -> List[Dict]:
+        """Get tasks for a specific meeting"""
+        # SQLite doesn't have a tasks table yet, return empty list
+        return []
+
+    async def get_meeting_transcript(self, meeting_id: str) -> Optional[Dict]:
+        """Get full transcript data for a meeting"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Get meeting info
+                cursor.execute("""
+                    SELECT id, title, created_at, updated_at FROM meetings WHERE id = ?
+                """, (meeting_id,))
+                
+                meeting_data = cursor.fetchone()
+                if not meeting_data:
+                    return None
+
+                # Get transcript chunks
+                cursor.execute("""
+                    SELECT id, transcript, timestamp, summary, action_items, key_points
+                    FROM transcripts WHERE meeting_id = ? ORDER BY timestamp
+                """, (meeting_id,))
+
+                transcript_chunks = cursor.fetchall()
+
+                # Get participants
+                participants = await self.get_participants(meeting_id)
+
+                # Combine all transcript text
+                full_transcript = " ".join([chunk[1] for chunk in transcript_chunks])
+
+                return {
+                    "meeting_id": meeting_id,
+                    "title": meeting_data[1],
+                    "transcript_chunks": [
+                        {
+                            "id": chunk[0],
+                            "text": chunk[1],
+                            "timestamp": chunk[2],
+                            "speaker": "Unknown",
+                            "summary": chunk[3],
+                            "action_items": chunk[4],
+                            "key_points": chunk[5]
+                        }
+                        for chunk in transcript_chunks
+                    ],
+                    "full_transcript": full_transcript,
+                    "participants": [p["name"] for p in participants],
+                    "duration": "Unknown",
+                    "created_at": meeting_data[2]
+                }
+        except Exception as e:
+            logger.error(f"Error getting meeting transcript: {e}")
+            return None
+
     async def health_check(self) -> bool:
         """Check if database connection is healthy"""
         try:
