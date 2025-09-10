@@ -78,6 +78,17 @@ app.add_middleware(
 # Include tools router
 app.include_router(tools_router, prefix="/api/v1", tags=["tools"])
 
+# Include frontend endpoints
+try:
+    from app.frontend_endpoints import router as frontend_router
+    app.include_router(frontend_router, tags=["frontend"])
+    logger.info(f"✅ Frontend router included with {len(frontend_router.routes)} routes")
+except Exception as e:
+    logger.error(f"❌ Failed to include frontend router: {e}")
+    logger.error(f"Frontend endpoints will not be available")
+    import traceback
+    traceback.print_exc()
+
 # Lab-required endpoints
 @app.get("/health")
 async def health_check():
