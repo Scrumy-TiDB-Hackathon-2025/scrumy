@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { FiHome, FiClipboard, FiUsers, FiCheckSquare, FiLink, FiSettings, FiChevronLeft, FiChevronRight } from "react-icons/fi";
 
 const navItems = [
@@ -12,19 +12,19 @@ const navItems = [
 ];
 
 export default function Sidebar() {
-  const [selected, setSelected] = useState("Home");
   const [collapsed, setCollapsed] = useState(false);
   const router = useRouter();
+  const pathname = usePathname();
   
   const handleNav = (item) => {
-    setSelected(item.label);
     router.push(item.path);
   };
 
   const handleSettings = () => {
-    setSelected("Settings");
     router.push("/settings");
   };
+
+  const isActive = (path) => pathname === path;
 
   return (
     <aside
@@ -56,7 +56,7 @@ export default function Sidebar() {
           <button
             key={item.label}
             className={`flex items-center w-full px-3 py-2 rounded-md text-sm transition
-              ${selected === item.label ? "bg-blue-500 text-white" : "text-gray-700 hover:bg-gray-100"}
+              ${isActive(item.path) ? "bg-blue-500 text-white" : "text-gray-700 hover:bg-gray-100"}
               ${collapsed ? "justify-center" : ""}
             `}
             onClick={() => handleNav(item)}
@@ -71,7 +71,7 @@ export default function Sidebar() {
       <div className="mt-auto border-t border-gray-200 pt-3">
         <button
           className={`flex items-center w-full px-3 py-2 rounded-md text-sm transition
-            ${selected === "Settings" ? "bg-blue-500 text-white" : "text-gray-700 hover:bg-gray-100"}
+            ${isActive("/settings") ? "bg-blue-500 text-white" : "text-gray-700 hover:bg-gray-100"}
             ${collapsed ? "justify-center" : ""}
           `}
           onClick={handleSettings}

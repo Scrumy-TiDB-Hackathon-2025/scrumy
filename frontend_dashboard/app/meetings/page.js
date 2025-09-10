@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { apiService } from '@/lib/api';
+import { useWebSocket } from '@/hooks/useWebSocket';
 
 const MeetingsPage = () => {
   const [selectedMeeting, setSelectedMeeting] = useState(null);
@@ -8,15 +10,14 @@ const MeetingsPage = () => {
   const [filterOpen, setFilterOpen] = useState(false);
   const [dateRangeOpen, setDateRangeOpen] = useState(false);
 
-  // Sample data - replace with your actual data source
-  const meetingsData = {
-    totalMeetings: 54,
-    completed: 3,
-    actionItems: 91,
-    avgDuration: 74
-  };
-
-  const meetings = [
+  const [meetingsData, setMeetingsData] = useState({
+    totalMeetings: 0,
+    completed: 0,
+    actionItems: 0,
+    avgDuration: 0
+  });
+  const [meetings, setMeetings] = useState([
+    // Default data while loading
     {
       id: 1,
       title: 'Daily Standup',
@@ -89,10 +90,73 @@ const MeetingsPage = () => {
         'What testing approach will be used?'
       ]
     }
-  ];
+  ]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [liveTranscript, setLiveTranscript] = useState([]);
 
-  const handleMeetingClick = (meeting) => {
+  const handleTranscriptUpdate = useCallback((data) => {
+    if (data.text) {
+      const newEntry = {
+        speaker: data.speaker || 'Speaker',
+        time: new Date().toLocaleTimeString(),
+        text: data.text,
+        avatar: data.speaker ? data.speaker.charAt(0).toUpperCase() : 'S',
+        isLive: true
+      };
+      setLiveTranscript(prev => [...prev, newEntry]);
+    }
+  }, []);
+
+  const { isConnected } = useWebSocket(selectedMeeting?.id, handleTranscriptUpdate);
+
+  useEffect(() => {
+    const fetchMeetings = async () => {
+      try {
+        setLoading(true);
+        const response = await apiService.getMeetings();
+        if (response.data) {
+          setMeetings(response.data.meetings || []);
+          setMeetingsData(response.data.stats || meetingsData);
+        }
+        setError('');
+      } catch (err) {
+        console.error('Failed to fetch meetings:', err);
+        setError(`Failed to load meetings: ${err.message}`);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchMeetings();
+  }, []);
+
+  const handleMeetingClick = async (meeting) => {
     setSelectedMeeting(meeting);
+    
+    // Load real transcript data
+    try {
+      const response = await apiService.getMeetingDetail(meeting.id);
+      if (response.data) {
+        const transcriptData = response.data;
+        const formattedTranscript = transcriptData.transcript_chunks?.map((chunk, index) => ({
+          speaker: chunk.speaker || `Speaker ${index + 1}`,
+          time: chunk.timestamp || '0:00',
+          text: chunk.text || '',
+          avatar: chunk.speaker ? chunk.speaker.charAt(0).toUpperCase() : 'S'
+        })) || [];
+        
+        setSelectedMeeting({
+          ...meeting,
+          transcript: formattedTranscript,
+          overview: transcriptData.transcript || meeting.summary
+        });
+        setLiveTranscript([]);
+      }
+    } catch (err) {
+      console.error('Failed to load meeting transcript:', err);
+      // Keep original meeting data if transcript load fails
+    }
   };
 
   const handleBackToList = () => {
@@ -265,12 +329,21 @@ const MeetingsPage = () => {
 
             {activeTab === 'transcript' && (
               <div className="space-y-4">
-                <div className="text-sm text-gray-600 mb-6">
-                  <strong>Speakers</strong>
+                <div className="flex justify-between items-center mb-6">
+                  <div className="text-sm text-gray-600">
+                    <strong>Speakers</strong>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-gray-400'}`}></div>
+                    <span className="text-gray-500">
+                      {isConnected ? 'Live' : 'Offline'}
+                    </span>
+                  </div>
                 </div>
                 
-                {selectedMeeting.transcript.map((entry, index) => (
-                  <div key={index} className="flex gap-4">
+                {/* Historical transcript */}
+                {selectedMeeting.transcript?.map((entry, index) => (
+                  <div key={`history-${index}`} className="flex gap-4">
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-medium ${
                       entry.avatar === 'C' ? 'bg-blue-500' : 
                       entry.avatar === 'L' ? 'bg-orange-500' : 
@@ -285,6 +358,23 @@ const MeetingsPage = () => {
                       <div className="flex items-center gap-2 mb-1">
                         <span className="font-medium text-gray-900">{entry.speaker}</span>
                         <span className="text-sm text-gray-500">{entry.time}</span>
+                      </div>
+                      <p className="text-gray-700">{entry.text}</p>
+                    </div>
+                  </div>
+                ))}
+                
+                {/* Live transcript */}
+                {liveTranscript.map((entry, index) => (
+                  <div key={`live-${index}`} className="flex gap-4 bg-green-50 p-3 rounded-lg border-l-4 border-green-500">
+                    <div className="w-8 h-8 rounded-full bg-green-600 flex items-center justify-center text-white text-sm font-medium">
+                      {entry.avatar}
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-medium text-gray-900">{entry.speaker}</span>
+                        <span className="text-sm text-gray-500">{entry.time}</span>
+                        <span className="text-xs text-green-600 font-medium">LIVE</span>
                       </div>
                       <p className="text-gray-700">{entry.text}</p>
                     </div>
@@ -371,7 +461,23 @@ const MeetingsPage = () => {
         </button>
       </div>
 
+      {/* Loading State */}
+      {loading && (
+        <div className="text-center py-12">
+          <div className="text-gray-400 text-lg mb-2">Loading meetings...</div>
+        </div>
+      )}
+
+      {/* Error State */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+          <div className="text-red-800 font-medium">Error Loading Meetings</div>
+          <div className="text-red-600 text-sm mt-1">{error}</div>
+        </div>
+      )}
+
       {/* Stats Cards */}
+      {!loading && (
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <div className="bg-white p-6 rounded-lg shadow-sm">
           <div className="text-2xl font-bold text-gray-900">{meetingsData.totalMeetings}</div>
@@ -390,6 +496,7 @@ const MeetingsPage = () => {
           <div className="text-gray-600 text-sm">Avg Meeting Duration</div>
         </div>
       </div>
+      )}
 
       {/* Search and Filters */}
       <div className="flex items-center gap-4 mb-6">
@@ -418,6 +525,7 @@ const MeetingsPage = () => {
       </div>
 
       {/* Meetings List */}
+      {!loading && (
       <div className="space-y-4">
         {meetings.map((meeting) => (
           <div 
@@ -463,6 +571,15 @@ const MeetingsPage = () => {
           </div>
         ))}
       </div>
+      )}
+
+      {/* Empty state */}
+      {!loading && !error && meetings.length === 0 && (
+        <div className="text-center py-12">
+          <div className="text-gray-400 text-lg mb-2">No meetings found</div>
+          <div className="text-gray-500">Start a meeting to see it appear here!</div>
+        </div>
+      )}
     </div>
   );
 };

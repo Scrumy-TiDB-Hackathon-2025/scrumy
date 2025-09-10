@@ -74,6 +74,7 @@ export const apiService = {
   // Meetings
   getMeetings: () => api.get(config.endpoints.meetings),
   getMeeting: (id) => api.get(`${config.endpoints.meetings}/${id}`),
+  getMeetingDetail: (id) => api.get(`${config.endpoints.meetings}/${id}`),
   
   // Tasks
   getTasks: () => api.get(config.endpoints.tasks),
@@ -83,5 +84,9 @@ export const apiService = {
   getTranscript: (meetingId) => api.get(`${config.endpoints.transcripts}/${meetingId}`),
   
   // Integrations
-  getIntegrationStatus: () => api.get(config.endpoints.integrations)
+  getIntegrationStatus: () => api.get(config.endpoints.integrationStatus),
+  getIntegrations: () => api.get(config.endpoints.integrations),
+  
+  // Projects
+  getProjects: () => api.get(config.endpoints.projects)
 };

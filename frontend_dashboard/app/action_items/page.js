@@ -1,73 +1,67 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { apiService } from '@/lib/api';
 
 const ActionItemsPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterOpen, setFilterOpen] = useState(false);
   const [showApproveAllModal, setShowApproveAllModal] = useState(false);
+  const [actionItems, setActionItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  // Sample data - replace with your actual data source
+  // Calculate stats from real data
   const statsData = {
-    totalActionItems: 29,
-    pendingApproval: 7,
-    inProgress: 21,
-    completionRate: 81
+    totalActionItems: actionItems.length,
+    pendingApproval: actionItems.filter(item => item.status === 'pending').length,
+    inProgress: actionItems.filter(item => item.status === 'in_progress').length,
+    completionRate: actionItems.length > 0 
+      ? Math.round((actionItems.filter(item => item.status === 'completed').length / actionItems.length) * 100)
+      : 0
   };
 
-  const [actionItems, setActionItems] = useState([
-    {
-      id: 1,
-      title: 'Follow up on payment API access with vendor',
-      description: 'Contact payment vendor to request sandbox API credentials for testing integration',
-      priority: 'High',
-      priorityColor: 'bg-blue-600',
-      from: 'Daily Standup - Team Alpha',
-      due: 'Dec 10, 2024',
-      confidence: 95,
+  // Transform backend task data to frontend format
+  const transformTaskData = (backendTasks) => {
+    return backendTasks.map(task => ({
+      id: task.id,
+      title: task.title,
+      description: task.description || 'No description provided',
+      priority: task.priority ? task.priority.charAt(0).toUpperCase() + task.priority.slice(1) : 'Medium',
+      priorityColor: task.priority === 'high' ? 'bg-red-600' : task.priority === 'medium' ? 'bg-blue-500' : 'bg-gray-500',
+      from: `Meeting ${task.meeting_id || 'Unknown'}`,
+      due: task.due_date || 'No due date',
+      confidence: 95, // Default confidence
       suggestedAssignee: {
-        name: 'Sarah Adams',
-        avatar: 'S',
-        color: 'bg-red-500'
+        name: task.assignee || 'Unassigned',
+        avatar: task.assignee ? task.assignee.charAt(0).toUpperCase() : 'U',
+        color: 'bg-blue-500'
       },
-      status: 'pending',
+      status: task.status || 'pending',
       aiGenerated: true
-    },
-    {
-      id: 2,
-      title: 'Design user flow for two-factor authentication',
-      description: 'Create wireframes and a high-fidelity prototype for the new 2FA setup process, including SMS and authenticator...',
-      priority: 'Medium',
-      priorityColor: 'bg-blue-500',
-      from: 'Sprint Planning - Security Team',
-      due: 'Dec 18, 2024',
-      confidence: 85,
-      suggestedAssignee: {
-        name: 'Michael Chen',
-        avatar: 'M',
-        color: 'bg-red-500'
-      },
-      status: 'pending',
-      aiGenerated: true
-    },
-    {
-      id: 3,
-      title: 'A/B test new onboarding copy',
-      description: 'Implement an A/B test for the new user onboarding welcome screen copy to measure impact on user engagement...',
-      priority: 'Low',
-      priorityColor: 'bg-gray-500',
-      from: 'Growth Hacking Session',
-      due: 'Jan 5, 2025',
-      confidence: 90,
-      suggestedAssignee: {
-        name: 'Laura Rodriguez',
-        avatar: 'L',
-        color: 'bg-red-500'
-      },
-      status: 'pending',
-      aiGenerated: false
-    }
-  ]);
+    }));
+  };
+
+  useEffect(() => {
+    const fetchTasks = async () => {
+      try {
+        setLoading(true);
+        const response = await apiService.getTasks();
+        const transformedTasks = transformTaskData(response.data || []);
+        setActionItems(transformedTasks);
+        setError('');
+      } catch (err) {
+        console.error('Failed to fetch tasks:', err);
+        setError(`Failed to load tasks: ${err.message}`);
+        // Keep empty array on error
+        setActionItems([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTasks();
+  }, []);
 
   const handleEdit = (itemId) => {
     console.log('Edit action item:', itemId);
@@ -192,9 +186,25 @@ const ActionItemsPage = () => {
         </button>
       </div>
 
+      {/* Loading State */}
+      {loading && (
+        <div className="text-center py-12">
+          <div className="text-gray-400 text-lg mb-2">Loading tasks...</div>
+        </div>
+      )}
+
+      {/* Error State */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+          <div className="text-red-800 font-medium">Error Loading Tasks</div>
+          <div className="text-red-600 text-sm mt-1">{error}</div>
+        </div>
+      )}
+
       {/* Action Items List */}
-      <div className="space-y-4">
-        {filteredActionItems.map((item) => (
+      {!loading && !error && (
+        <div className="space-y-4">
+          {filteredActionItems.map((item) => (
           <div key={item.id} className="bg-white p-6 rounded-lg shadow-sm">
             <div className="flex items-start justify-between">
               <div className="flex-1">
@@ -260,14 +270,20 @@ const ActionItemsPage = () => {
               </button>
             </div>
           </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Empty state */}
-      {filteredActionItems.length === 0 && (
+      {!loading && !error && filteredActionItems.length === 0 && (
         <div className="text-center py-12">
           <div className="text-gray-400 text-lg mb-2">No action items found</div>
-          <div className="text-gray-500">Try adjusting your search terms or filters</div>
+          <div className="text-gray-500">
+            {actionItems.length === 0 
+              ? 'No tasks have been created yet. Start a meeting to generate action items!' 
+              : 'Try adjusting your search terms or filters'
+            }
+          </div>
         </div>
       )}
 

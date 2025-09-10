@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, Filter } from 'lucide-react';
+import { apiService } from '@/lib/api';
 
 export default function ProjectTracker() {
-  const [tasks] = useState({
+  const [tasks, setTasks] = useState({
     todo: [{ id: 1, title: 'Create' }],
     inProgress: [
       { id: 2, title: 'UI/UX | Recreate the Onboarding flow Mellypay (from Opay, Monipoint, etc)', project: 'Project 1', code: 'Pro-1920' },
@@ -21,6 +22,26 @@ export default function ProjectTracker() {
       { id: 8, title: 'UI/UX | Recreate the Onboarding flow Mellypay (from Opay, Monipoint, etc)', project: 'Project 1', code: 'Pro-1920' },
     ],
   });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const fetchProjects = async () => {
+      try {
+        setLoading(true);
+        const response = await apiService.getProjects();
+        setTasks(response.data || tasks);
+        setError('');
+      } catch (err) {
+        console.error('Failed to fetch projects:', err);
+        setError(`Failed to load projects: ${err.message}`);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProjects();
+  }, []);
 
   const columns = [
     { key: 'todo', title: 'To Do' },
@@ -48,7 +69,23 @@ export default function ProjectTracker() {
         </div>
       </div>
 
+      {/* Loading State */}
+      {loading && (
+        <div className="text-center py-12">
+          <div className="text-gray-400 text-lg mb-2">Loading projects...</div>
+        </div>
+      )}
+
+      {/* Error State */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+          <div className="text-red-800 font-medium">Error Loading Projects</div>
+          <div className="text-red-600 text-sm mt-1">{error}</div>
+        </div>
+      )}
+
       {/* Board */}
+      {!loading && (
       <div className="flex gap-4 overflow-x-auto">
         {columns.map((col) => (
           <div key={col.key} className="flex-1 bg-white border border-gray-200 rounded-lg p-3 min-w-[220px]">
@@ -82,6 +119,7 @@ export default function ProjectTracker() {
           </div>
         ))}
       </div>
+      )}
     </div>
   );
 }

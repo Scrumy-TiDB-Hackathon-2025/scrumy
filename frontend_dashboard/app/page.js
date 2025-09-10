@@ -60,7 +60,7 @@ export default function Dashboard() {
     // Refresh every 30 seconds
     const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
-  }, [backendUrl, error]);
+  }, [error]);
 
   return (
     <div className="flex h-full bg-gray-50">
