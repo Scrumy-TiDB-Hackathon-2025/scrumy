@@ -149,7 +149,9 @@ const MeetingsPage = () => {
         setSelectedMeeting({
           ...meeting,
           transcript: formattedTranscript,
-          overview: transcriptData.transcript || meeting.summary
+          overview: transcriptData.transcript || meeting.summary,
+          actionItemsList: meeting.actionItemsList || [],
+          chatQuestions: meeting.chatQuestions || []
         });
         setLiveTranscript([]);
       }
@@ -167,7 +169,7 @@ const MeetingsPage = () => {
   const toggleActionItem = (actionItemId) => {
     if (!selectedMeeting) return;
     
-    const updatedActionItems = selectedMeeting.actionItemsList.map(item =>
+    const updatedActionItems = (selectedMeeting.actionItemsList || []).map(item =>
       item.id === actionItemId ? { ...item, completed: !item.completed } : item
     );
     
@@ -188,7 +190,7 @@ const MeetingsPage = () => {
     
     setSelectedMeeting({
       ...selectedMeeting,
-      actionItemsList: [...selectedMeeting.actionItemsList, newActionItem]
+      actionItemsList: [...(selectedMeeting.actionItemsList || []), newActionItem]
     });
   };
 
@@ -286,7 +288,7 @@ const MeetingsPage = () => {
                     </button>
                   </h2>
                   <div className="space-y-3">
-                    {selectedMeeting.actionItemsList.map((item) => (
+                    {(selectedMeeting.actionItemsList || []).map((item) => (
                       <div key={item.id} className="flex items-center gap-3">
                         <button
                           onClick={() => toggleActionItem(item.id)}
@@ -419,7 +421,7 @@ const MeetingsPage = () => {
             </div>
             
             <div className="space-y-3">
-              {selectedMeeting.chatQuestions.map((question, index) => (
+              {(selectedMeeting.chatQuestions || []).map((question, index) => (
                 <button
                   key={index}
                   className="w-full text-left p-3 bg-white rounded-lg border border-gray-200 hover:border-gray-300 text-sm text-gray-700"
