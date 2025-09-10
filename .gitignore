@@ -311,3 +311,18 @@ ai_processing/.env.test
 test-meeting.wav
 *.wav
 test_*.py
+
+# ----------------
+# Hackathon cleanup - ignore temporary files
+# ----------------
+tidb-hackathon.txt
+llm.txt
+*.wav
+*.wav.txt
+logsfromserverandchrome.logs
+
+# Ignore remaining analysis documents
+AI_PROCESSING_INTEGRATION_TODOS.md
+TASK_CREATION_FIX.md
+DEPLOYMENT_CHECKLIST_JSON_FIX.md
+EC2_WEBSOCKET_TESTING_GUIDE.md

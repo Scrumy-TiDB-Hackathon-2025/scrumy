@@ -4,8 +4,13 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:prod": "NODE_ENV=production next dev",
     "build": "next build",
-    "start": "next start"
+    "build:dev": "NODE_ENV=development next build",
+    "start": "next start",
+    "start:dev": "NODE_ENV=development next start",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "@radix-ui/react-popover": "^1.1.15",
