@@ -421,6 +421,14 @@ class WebSocketManager:
         
         # Initialize database using same factory as main app for TiDB compatibility
         self.db = self._init_database()
+        
+        # Ensure database is properly initialized by running a health check
+        if self.db:
+            try:
+                # This will trigger table creation for SQLite
+                asyncio.create_task(self._ensure_database_ready())
+            except Exception as e:
+                logger.warning(f"Database health check failed: {e}")
 
     def _init_database(self):
         """Initialize database using same configuration as main app"""
@@ -441,13 +449,33 @@ class WebSocketManager:
                 }
                 db = DatabaseFactory.create_from_config(config)
             else:
-                db = DatabaseFactory.create_database(db_type='sqlite')
+                # For SQLite, pass the database path explicitly
+                db_path = os.getenv('SQLITE_DB_PATH', 'meeting_minutes.db')
+                db = DatabaseFactory.create_database(db_type='sqlite', db_path=db_path)
                 
             logger.info(f"WebSocket server using {db_type.upper()} database")
+            print(f"✅ Database initialized: {db_type.upper()}")
             return db
         except Exception as e:
             logger.warning(f"Database initialization failed: {e}")
+            print(f"❌ Database initialization failed: {e}")
             return None
+    
+    async def _ensure_database_ready(self):
+        """Ensure database is ready and tables are created"""
+        try:
+            if self.db:
+                # Run health check which will trigger table creation for SQLite
+                is_healthy = await self.db.health_check()
+                if is_healthy:
+                    logger.info("Database health check passed - tables ready")
+                    print(f"✅ Database tables ready")
+                else:
+                    logger.warning("Database health check failed")
+                    print(f"⚠️ Database health check failed")
+        except Exception as e:
+            logger.error(f"Database readiness check failed: {e}")
+            print(f"❌ Database readiness check failed: {e}")
 
 
 
@@ -769,8 +797,16 @@ class WebSocketManager:
             # Add to session
             session.add_transcript_chunk(transcription_result)
             
-            # Note: Individual transcript chunks are not saved here
-            # Full transcript is saved before AI processing in _generate_meeting_summary()
+            # Save transcript chunk to database immediately
+            if self.db and transcription_result.get('text'):
+                try:
+                    await self.db.save_meeting_transcript(
+                        meeting_id=session.meeting_id,
+                        transcript=transcription_result['text'],
+                        timestamp=transcription_result.get('timestamp', datetime.now().isoformat())
+                    )
+                except Exception as db_error:
+                    logger.error(f"Failed to save transcript chunk: {db_error}")
 
             # Add to buffer (no immediate AI processing)
             if transcription_result.get('text'):
@@ -1336,6 +1372,8 @@ async def start_server(host="0.0.0.0", port=8080):
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         # Startup
+        print("🗄️ Ensuring database is ready...")
+        await websocket_manager._ensure_database_ready()
         print("🚀 Starting background timeout checker...")
         await background_manager.start(websocket_manager.audio_buffer_manager, websocket_manager)
         yield
