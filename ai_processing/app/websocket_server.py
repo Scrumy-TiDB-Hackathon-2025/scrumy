@@ -74,7 +74,7 @@ class AudioProcessor:
     """Handle audio chunk processing and transcription"""
 
     def __init__(self):
-        self.whisper_model_path = os.getenv('WHISPER_MODEL_PATH', './whisper.cpp/models/ggml-medium.en.bin')
+        self.whisper_model_path = os.getenv('WHISPER_MODEL_PATH', './whisper.cpp/models/ggml-base.en.bin')
         self.whisper_executable = os.getenv('WHISPER_EXECUTABLE', './whisper.cpp/build/bin/whisper-cli')
 
     async def process_audio_chunk(self, audio_data: bytes, metadata: Dict) -> Dict:
@@ -418,17 +418,24 @@ class WebSocketManager:
         self.batch_processor = None  # Initialized when first session is created
         self.processing_locks: Dict[str, threading.Lock] = {}  # Prevent race conditions
         self.websocket_to_session: Dict[WebSocket, str] = {}  # Track websocket to session mapping
+        self.saved_transcript_hashes: Set[str] = set()  # Track saved transcript hashes to prevent duplicates
         
         # Initialize database using same factory as main app for TiDB compatibility
         self.db = self._init_database()
         
-        # Ensure database is properly initialized by running a health check
+        # Force database table creation immediately
         if self.db:
             try:
-                # This will trigger table creation for SQLite
-                asyncio.create_task(self._ensure_database_ready())
+                # For SQLite, force table creation by calling _init_db directly
+                if hasattr(self.db, '_init_db'):
+                    self.db._init_db()
+                    logger.info("Database tables created successfully")
+                    print(f"✅ Database tables initialized")
+                else:
+                    logger.warning("Database doesn't support table initialization")
             except Exception as e:
-                logger.warning(f"Database health check failed: {e}")
+                logger.error(f"Database table creation failed: {e}")
+                print(f"❌ Database table creation failed: {e}")
 
     def _init_database(self):
         """Initialize database using same configuration as main app"""
@@ -465,11 +472,11 @@ class WebSocketManager:
         """Ensure database is ready and tables are created"""
         try:
             if self.db:
-                # Run health check which will trigger table creation for SQLite
+                # Run health check
                 is_healthy = await self.db.health_check()
                 if is_healthy:
                     logger.info("Database health check passed - tables ready")
-                    print(f"✅ Database tables ready")
+                    print(f"✅ Database health check passed")
                 else:
                     logger.warning("Database health check failed")
                     print(f"⚠️ Database health check failed")
@@ -511,8 +518,11 @@ class WebSocketManager:
                     if os.path.exists(wav_path):
                         os.unlink(wav_path)
 
-                # Clear buffer after processing
+                # CRITICAL: Clear buffer after processing to prevent duplicates
                 buffer.clear()
+                print(f"🧹 Cleared timeout buffer for session {session_id}")
+            else:
+                print(f"⏰ Timeout buffer empty for session {session_id} - skipping")
 
         except Exception as e:
             logger.error(f"Error processing timeout buffer: {e}")
@@ -531,14 +541,47 @@ class WebSocketManager:
 
             # Check for duplicates before broadcasting
             transcript_text = transcription_result.get('text', '').strip()
-            if not transcript_text or session.buffer._is_duplicate_transcript(transcript_text):
+            if not transcript_text or transcript_text in ['[BLANK_AUDIO]', '[SILENCE_DETECTED]', '[PROCESSING_ERROR]', '[WHISPER_ERROR]']:
+                print(f"⚠️ Skipping empty/invalid timeout transcript: '{transcript_text}'")
+                return
+                
+            # Enhanced duplicate detection
+            if hasattr(session.buffer, '_is_duplicate_transcript') and session.buffer._is_duplicate_transcript(transcript_text):
                 print(f"⚠️ Skipping duplicate timeout transcript: '{transcript_text[:50]}...'")
                 return
+            
+            # Additional check against recent transcripts in session
+            if hasattr(session, 'transcript_chunks'):
+                recent_texts = [chunk.get('text', '').strip().lower() for chunk in session.transcript_chunks[-3:]]
+                if transcript_text.lower() in recent_texts:
+                    print(f"⚠️ Skipping duplicate against recent session transcripts: '{transcript_text[:50]}...'")
+                    return
+
+            # Save timeout transcript to database immediately (with hash check)
+            if self.db:
+                import hashlib
+                transcript_hash = hashlib.md5(f"{session_id}:{transcript_text}".encode()).hexdigest()
+                if transcript_hash not in self.saved_transcript_hashes:
+                    try:
+                        print(f"💾 Saving timeout transcript to DB: '{transcript_text[:50]}...'")
+                        await self.db.save_meeting_transcript(
+                            meeting_id=session_id,
+                            transcript=transcript_text,
+                            timestamp=transcription_result.get('timestamp', datetime.now().isoformat())
+                        )
+                        self.saved_transcript_hashes.add(transcript_hash)
+                        print(f"✅ Successfully saved timeout transcript to database")
+                    except Exception as db_error:
+                        print(f"❌ Failed to save timeout transcript: {db_error}")
+                        logger.error(f"Failed to save timeout transcript: {db_error}")
+                else:
+                    print(f"⚠️ Skipping duplicate timeout transcript (hash: {transcript_hash[:8]}...)")
 
             # Add to recent transcripts for future deduplication
-            session.buffer.recent_transcripts.append(transcript_text.lower())
-            if len(session.buffer.recent_transcripts) > session.buffer.max_recent_transcripts:
-                session.buffer.recent_transcripts.pop(0)  # Remove oldest
+            if hasattr(session.buffer, 'recent_transcripts'):
+                session.buffer.recent_transcripts.append(transcript_text.lower())
+                if len(session.buffer.recent_transcripts) > getattr(session.buffer, 'max_recent_transcripts', 10):
+                    session.buffer.recent_transcripts.pop(0)  # Remove oldest
 
             # Update session activity with transcript segment
             transcript_segment = {
@@ -681,10 +724,18 @@ class WebSocketManager:
                 logger.warning("Received empty audio chunk")
                 return
 
-            # Get or create meeting session
+            # Get or create meeting session - use consistent ID generation
             meeting_id = f"{platform}_{hash(meeting_url) % 1000000}"
+            
+            # Check if session already exists with different ID format
+            existing_session = None
+            for session in self.meeting_sessions.values():
+                if session.meeting_url == meeting_url and session.platform == platform:
+                    existing_session = session
+                    meeting_id = session.meeting_id  # Use existing ID
+                    break
 
-            if meeting_id not in self.meeting_sessions:
+            if meeting_id not in self.meeting_sessions and not existing_session:
                 self.meeting_sessions[meeting_id] = MeetingSession(meeting_id, platform)
                 logger.info(f"Created new meeting session: {meeting_id}")
                 
@@ -695,8 +746,10 @@ class WebSocketManager:
                         logger.info(f"💾 Saved meeting to database: {meeting_id}")
                     except Exception as db_error:
                         logger.error(f"Failed to save meeting to database: {db_error}")
+            elif existing_session:
+                logger.info(f"Using existing meeting session: {meeting_id}")
 
-            session = self.meeting_sessions[meeting_id]
+            session = existing_session or self.meeting_sessions[meeting_id]
             session.meeting_url = meeting_url
 
             # Update participant data if available (enhanced format)
@@ -783,10 +836,28 @@ class WebSocketManager:
 
             if not ready_for_processing:
                 print(f"🔄 Buffering audio chunk ({audio_buffer.get_duration_ms():.1f}ms/{audio_buffer.target_duration_ms}ms)")
+                # Still save any transcript we got to database before early return
+                transcript_text = transcription_result.get('text', '').strip()
+                if self.db and transcript_text and transcript_text not in ['[BLANK_AUDIO]', '[SILENCE_DETECTED]', '[PROCESSING_ERROR]', '[WHISPER_ERROR]']:
+                    try:
+                        print(f"💾 Saving buffered transcript to DB: '{transcript_text[:50]}...'")
+                        await self.db.save_meeting_transcript(
+                            meeting_id=session.meeting_id,
+                            transcript=transcript_text,
+                            timestamp=transcription_result.get('timestamp', datetime.now().isoformat())
+                        )
+                        print(f"✅ Successfully saved buffered transcript to database")
+                    except Exception as db_error:
+                        print(f"❌ Failed to save buffered transcript: {db_error}")
+                        logger.error(f"Failed to save buffered transcript: {db_error}")
                 # Early return - let background task handle timeout processing
                 return
+            
+            print(f"🎤 Ready for processing - buffer full: {ready_for_processing}")
 
             # Only continue if we actually processed something (buffer was full, not timeout)
+            print(f"🎯 Processing result: '{transcription_result.get('text', 'EMPTY')[:50]}...'")
+            
             # Log transcript chunk (if logger available)
             if transcription_result.get('text') and session.buffer.logger:
                 session.buffer.logger.log_transcript_chunk(
@@ -796,28 +867,41 @@ class WebSocketManager:
 
             # Add to session
             session.add_transcript_chunk(transcription_result)
+            print(f"📝 Added to session: '{transcription_result.get('text', 'EMPTY')[:50]}...'")
             
-            # Save transcript chunk to database immediately
-            if self.db and transcription_result.get('text'):
-                try:
-                    await self.db.save_meeting_transcript(
-                        meeting_id=session.meeting_id,
-                        transcript=transcription_result['text'],
-                        timestamp=transcription_result.get('timestamp', datetime.now().isoformat())
-                    )
-                except Exception as db_error:
-                    logger.error(f"Failed to save transcript chunk: {db_error}")
+            # Save transcript chunk to database immediately (with hash check)
+            transcript_text = transcription_result.get('text', '').strip()
+            if self.db and transcript_text and transcript_text not in ['[BLANK_AUDIO]', '[SILENCE_DETECTED]', '[PROCESSING_ERROR]', '[WHISPER_ERROR]']:
+                import hashlib
+                transcript_hash = hashlib.md5(f"{session.meeting_id}:{transcript_text}".encode()).hexdigest()
+                if transcript_hash not in self.saved_transcript_hashes:
+                    try:
+                        print(f"💾 Saving transcript to DB: '{transcript_text[:50]}...'")
+                        await self.db.save_meeting_transcript(
+                            meeting_id=session.meeting_id,
+                            transcript=transcript_text,
+                            timestamp=transcription_result.get('timestamp', datetime.now().isoformat())
+                        )
+                        self.saved_transcript_hashes.add(transcript_hash)
+                        print(f"✅ Successfully saved transcript chunk to database")
+                    except Exception as db_error:
+                        print(f"❌ Failed to save transcript chunk: {db_error}")
+                        logger.error(f"Failed to save transcript chunk: {db_error}")
+                else:
+                    print(f"⚠️ Skipping duplicate transcript (hash: {transcript_hash[:8]}...)")
+            else:
+                print(f"⚠️ Skipping DB save - db: {self.db is not None}, text: '{transcript_text[:30]}...'")
 
             # Add to buffer (no immediate AI processing)
-            if transcription_result.get('text'):
+            if transcript_text:
                 # Check for duplicate transcript before processing
-                transcript_text = transcription_result['text'].strip()
-
                 # Skip if duplicate or empty
                 if session.buffer._is_duplicate_transcript(transcript_text):
                     print(f"⚠️ Skipping duplicate transcript: '{transcript_text[:50]}...'")
                     transcription_result['text'] = ''  # Clear duplicate
                     return  # Skip processing this duplicate
+                
+                print(f"🔄 Processing transcript: '{transcript_text[:50]}...'")
 
                 # Add to recent transcripts for future deduplication
                 session.buffer.recent_transcripts.append(transcript_text.lower())
@@ -996,6 +1080,21 @@ class WebSocketManager:
                             if final_result.get('text'):
                                 session.add_transcript_chunk(final_result)
                                 print(f"✅ Final audio processed: '{final_result['text'][:50]}...'")
+
+                                # Save final transcript to database
+                                final_text = final_result['text'].strip()
+                                if self.db and final_text and final_text not in ['[BLANK_AUDIO]', '[SILENCE_DETECTED]', '[PROCESSING_ERROR]', '[WHISPER_ERROR]']:
+                                    try:
+                                        print(f"💾 Saving final transcript to DB: '{final_text[:50]}...'")
+                                        await self.db.save_meeting_transcript(
+                                            meeting_id=session.meeting_id,
+                                            transcript=final_text,
+                                            timestamp=final_result.get('timestamp', datetime.now().isoformat())
+                                        )
+                                        print(f"✅ Successfully saved final transcript to database")
+                                    except Exception as db_error:
+                                        print(f"❌ Failed to save final transcript: {db_error}")
+                                        logger.error(f"Failed to save final transcript: {db_error}")
 
                                 final_transcription_data = WebSocketEventData.transcription_result(
                                     text=final_result['text'],
@@ -1234,9 +1333,9 @@ class WebSocketManager:
             meeting_url = message.get('meetingUrl', 'unknown')
             platform = message.get('platform', 'unknown')
 
-            # Create meeting_id from URL or generate unique one
+            # Use consistent meeting_id generation - match audio chunk handler
             if meeting_url and meeting_url != 'unknown':
-                meeting_id = f"{platform}_{hash(meeting_url) % 100000}"
+                meeting_id = f"{platform}_{hash(meeting_url) % 1000000}"  # Match audio chunk handler
             else:
                 meeting_id = f"meeting_{int(time.time())}"
 
