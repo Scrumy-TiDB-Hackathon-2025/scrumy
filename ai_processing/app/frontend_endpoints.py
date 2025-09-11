@@ -291,6 +291,22 @@ async def get_integrations_list():
         logger.error(f"Error getting integrations: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/api/clear-database")
+async def clear_database():
+    """Clear all database data for fresh testing"""
+    try:
+        if db:
+            success = db.clear_all()
+            if success:
+                return {"status": "success", "message": "Database cleared successfully"}
+            else:
+                raise HTTPException(status_code=500, detail="Failed to clear database")
+        else:
+            return {"status": "success", "message": "No database to clear (using mock data)"}
+    except Exception as e:
+        logger.error(f"Error clearing database: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/api/integration-status")
 async def get_integration_status():
     """Get status of external integrations"""

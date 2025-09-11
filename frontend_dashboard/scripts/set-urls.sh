@@ -4,10 +4,10 @@
 
 set_dev() {
     echo "Setting development URLs..."
-    read -p "Enter API URL (default: http://localhost:8080): " api_url
+    read -p "Enter API URL (default: http://localhost:5167): " api_url
     read -p "Enter WebSocket URL (default: ws://localhost:8080): " ws_url
     
-    api_url=${api_url:-http://localhost:8080}
+    api_url=${api_url:-http://localhost:5167}
     ws_url=${ws_url:-ws://localhost:8080}
     
     cat > .env.local << EOF

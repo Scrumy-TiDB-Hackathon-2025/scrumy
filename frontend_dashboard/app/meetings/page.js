@@ -1,10 +1,12 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter, useParams } from 'next/navigation';
 import { apiService } from '@/lib/api';
 import { useWebSocket } from '@/hooks/useWebSocket';
 
 const MeetingsPage = () => {
+  const router = useRouter();
   const [selectedMeeting, setSelectedMeeting] = useState(null);
   const [activeTab, setActiveTab] = useState('summary');
   const [filterOpen, setFilterOpen] = useState(false);
@@ -132,6 +134,7 @@ const MeetingsPage = () => {
   }, []);
 
   const handleMeetingClick = async (meeting) => {
+    router.push(`/meetings/${meeting.id}`);
     setSelectedMeeting(meeting);
     
     // Load real transcript data
@@ -162,6 +165,7 @@ const MeetingsPage = () => {
   };
 
   const handleBackToList = () => {
+    router.push('/meetings');
     setSelectedMeeting(null);
     setActiveTab('summary');
   };
