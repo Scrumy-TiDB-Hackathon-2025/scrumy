@@ -42,10 +42,10 @@ class TiDBManager:
         self.connection_string = os.getenv('TIDB_CONNECTION_STRING')
         if not self.connection_string:
             raise ValueError("TIDB_CONNECTION_STRING environment variable is required")
-        
+
         # Parse connection string
         self.connection_params = self._parse_connection_string(self.connection_string)
-        
+
     def _parse_connection_string(self, connection_string: str) -> Dict[str, Any]:
         """Parse TiDB connection string into connection parameters"""
         try:
@@ -66,7 +66,7 @@ class TiDBManager:
         except Exception as e:
             logger.error(f"Failed to parse connection string: {e}")
             raise
-    
+
     async def connect(self) -> bool:
         """Establish connection to TiDB"""
         try:
@@ -78,13 +78,13 @@ class TiDBManager:
         except Error as e:
             logger.error(f"Error connecting to TiDB: {e}")
             return False
-    
+
     async def disconnect(self):
         """Close TiDB connection"""
         if self.connection and self.connection.is_connected():
             self.connection.close()
             logger.info("TiDB connection closed")
-    
+
     async def _initialize_tables(self):
         """Create tables if they don't exist"""
         tables = {
@@ -150,7 +150,7 @@ class TiDBManager:
                 )
             '''
         }
-        
+
         cursor = self.connection.cursor()
         try:
             for table_name, create_sql in tables.items():
@@ -162,7 +162,7 @@ class TiDBManager:
             raise
         finally:
             cursor.close()
-    
+
     async def save_meeting(self, meeting_data: Dict[str, Any]) -> bool:
         """Save meeting information"""
         try:
@@ -176,17 +176,17 @@ class TiDBManager:
                 metadata = VALUES(metadata),
                 updated_at = CURRENT_TIMESTAMP
             '''
-            
+
             # Convert participants list to JSON string if needed
             participants = meeting_data.get('participants', [])
             if isinstance(participants, list):
                 participants = json.dumps(participants)
-            
+
             # Convert metadata to JSON string if needed
             metadata = meeting_data.get('metadata', {})
             if isinstance(metadata, dict):
                 metadata = json.dumps(metadata)
-            
+
             data = {
                 'id': meeting_data['id'],
                 'platform': meeting_data.get('platform', 'unknown'),
@@ -194,16 +194,16 @@ class TiDBManager:
                 'participants': participants,
                 'metadata': metadata
             }
-            
+
             cursor.execute(query, data)
             self.connection.commit()
             cursor.close()
             return True
-            
+
         except Error as e:
             logger.error(f"Error saving meeting: {e}")
             return False
-    
+
     async def save_transcript(self, transcript_data: Dict[str, Any]) -> bool:
         """Save transcript segment"""
         try:
@@ -212,7 +212,7 @@ class TiDBManager:
                 INSERT INTO transcripts (meeting_id, speaker, text, confidence, segment_start, segment_end)
                 VALUES (%(meeting_id)s, %(speaker)s, %(text)s, %(confidence)s, %(segment_start)s, %(segment_end)s)
             '''
-            
+
             data = {
                 'meeting_id': transcript_data['meeting_id'],
                 'speaker': transcript_data.get('speaker', 'Unknown'),
@@ -221,16 +221,16 @@ class TiDBManager:
                 'segment_start': transcript_data.get('segment_start'),
                 'segment_end': transcript_data.get('segment_end')
             }
-            
+
             cursor.execute(query, data)
             self.connection.commit()
             cursor.close()
             return True
-            
+
         except Error as e:
             logger.error(f"Error saving transcript: {e}")
             return False
-    
+
     async def save_ai_summary(self, summary_data: Dict[str, Any]) -> bool:
         """Save AI-generated summary"""
         try:
@@ -239,12 +239,12 @@ class TiDBManager:
                 INSERT INTO ai_summaries (meeting_id, summary_type, content, model_used, processing_time)
                 VALUES (%(meeting_id)s, %(summary_type)s, %(content)s, %(model_used)s, %(processing_time)s)
             '''
-            
+
             # Convert content to JSON string if needed
             content = summary_data['content']
             if isinstance(content, dict):
                 content = json.dumps(content)
-            
+
             data = {
                 'meeting_id': summary_data['meeting_id'],
                 'summary_type': summary_data.get('summary_type', 'general'),
@@ -252,19 +252,19 @@ class TiDBManager:
                 'model_used': summary_data.get('model_used', 'unknown'),
                 'processing_time': summary_data.get('processing_time', 0.0)
             }
-            
+
             cursor.execute(query, data)
             self.connection.commit()
             cursor.close()
             return True
-            
+
         except Error as e:
             logger.error(f"Error saving AI summary: {e}")
             return False
-    
-    async def save_task(self, meeting_id: str, title: str, description: str = "", 
+
+    async def save_task(self, meeting_id: str, title: str, description: str = "",
                        assignee: str = "", priority: str = "medium", status: str = "not_started",
-                       due_date: str = None, notion_page_id: str = None, 
+                       due_date: str = None, notion_page_id: str = None,
                        slack_message_ts: str = None, task_id: str = None) -> Optional[int]:
         """Save task and return task ID"""
         try:
@@ -273,9 +273,9 @@ class TiDBManager:
                 INSERT INTO tasks (meeting_id, title, description, assignee, priority, status, due_date, notion_page_id, slack_message_ts)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             '''
-            
+
             cursor.execute(query, (
-                meeting_id, title, description, assignee, priority, 
+                meeting_id, title, description, assignee, priority,
                 status, due_date, notion_page_id, slack_message_ts
             ))
             self.connection.commit()
@@ -283,82 +283,89 @@ class TiDBManager:
             cursor.close()
             logger.info(f"Saved task '{title}' with ID {task_id} for meeting {meeting_id}")
             return task_id
-            
+
         except Error as e:
             logger.error(f"Error saving task: {e}")
             return None
-    
+
     async def get_meeting_transcripts(self, meeting_id: str) -> List[Dict[str, Any]]:
         """Get all transcripts for a meeting"""
         try:
             cursor = self.connection.cursor(dictionary=True)
             query = '''
-                SELECT * FROM transcripts 
-                WHERE meeting_id = %s 
+                SELECT * FROM transcripts
+                WHERE meeting_id = %s
                 ORDER BY timestamp ASC
             '''
             cursor.execute(query, (meeting_id,))
             results = cursor.fetchall()
             cursor.close()
             return results
-            
+
         except Error as e:
             logger.error(f"Error getting transcripts: {e}")
             return []
-    
+
     async def get_meeting_tasks(self, meeting_id: str) -> List[Dict[str, Any]]:
         """Get all tasks for a meeting"""
         try:
             cursor = self.connection.cursor(dictionary=True)
             query = '''
-                SELECT * FROM tasks 
-                WHERE meeting_id = %s 
+                SELECT * FROM tasks
+                WHERE meeting_id = %s
                 ORDER BY created_at ASC
             '''
             cursor.execute(query, (meeting_id,))
             results = cursor.fetchall()
             cursor.close()
             return results
-            
+
         except Error as e:
             logger.error(f"Error getting tasks: {e}")
             return []
-    
+
     async def update_task_notion_id(self, task_id: int, notion_page_id: str) -> bool:
         """Update task with Notion page ID"""
         try:
             cursor = self.connection.cursor()
             query = '''
-                UPDATE tasks 
-                SET notion_page_id = %s, updated_at = CURRENT_TIMESTAMP 
+                UPDATE tasks
+                SET notion_page_id = %s, updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
             '''
             cursor.execute(query, (notion_page_id, task_id))
             self.connection.commit()
             cursor.close()
             return True
-            
+
         except Error as e:
             logger.error(f"Error updating task Notion ID: {e}")
             return False
-    
+
     async def update_task_slack_ts(self, task_id: int, slack_message_ts: str) -> bool:
         """Update task with Slack message timestamp"""
         try:
             cursor = self.connection.cursor()
             query = '''
-                UPDATE tasks 
-                SET slack_message_ts = %s, updated_at = CURRENT_TIMESTAMP 
+                UPDATE tasks
+                SET slack_message_ts = %s, updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
             '''
             cursor.execute(query, (slack_message_ts, task_id))
             self.connection.commit()
             cursor.close()
             return True
-            
+
         except Error as e:
             logger.error(f"Error updating task Slack timestamp: {e}")
             return False
 
-# Global instance
-tidb_manager = TiDBManager()
+# Global instance - lazy loaded to avoid import-time errors
+tidb_manager = None
+
+def get_tidb_manager():
+    """Get or create the TiDB manager instance"""
+    global tidb_manager
+    if tidb_manager is None:
+        tidb_manager = TiDBManager()
+    return tidb_manager

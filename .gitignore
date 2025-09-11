@@ -286,6 +286,8 @@ git_cleanup_script.sh
 # Virtual environments
 venv/
 .venv/
+ai-venv/
+.ai-venv/
 
 # Cache
 __pycache__/

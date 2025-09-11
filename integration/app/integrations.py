@@ -84,7 +84,7 @@ class NotionIntegration:
         }
 
     async def create_task(self, task: Dict) -> Dict:
-        """Create task in Notion with enhanced validation and error handling"""
+        """Create task in Notion with simplified, working implementation"""
         if self.is_mock:
             return self._create_mock_task(task)
 
@@ -173,6 +173,8 @@ class NotionIntegration:
                             "success": True,
                             "notion_page_id": result["id"],
                             "notion_url": result["url"],
+                            "task_id": result["id"],
+                            "task_url": result["url"],
                             "task": task
                         }
                     else:
@@ -201,8 +203,12 @@ class NotionIntegration:
             "success": True,
             "notion_page_id": mock_page_id,
             "notion_url": mock_url,
+            "task_id": mock_page_id,
+            "task_url": mock_url,
             "task": task,
-            "mock": True
+            "mock": True,
+            "platform": "notion",
+            "message": "This is a mock response for development testing"
         }
 
 class SlackIntegration:
@@ -522,6 +528,8 @@ class ClickUpIntegration:
                         result = await response.json()
                         return {
                             "success": True,
+                            "task_id": result["id"],
+                            "task_url": result["url"],
                             "clickup_task_id": result["id"],
                             "clickup_url": result["url"],
                             "task": task
@@ -550,10 +558,14 @@ class ClickUpIntegration:
 
         return {
             "success": True,
+            "platform": "clickup",
+            "task_id": mock_task_id,
+            "task_url": mock_url,
             "clickup_task_id": mock_task_id,
             "clickup_url": mock_url,
             "task": task,
-            "mock": True
+            "mock": True,
+            "message": "This is a mock response - ClickUp task creation simulated"
         }
 
 
