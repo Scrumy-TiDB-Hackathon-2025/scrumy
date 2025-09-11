@@ -771,6 +771,86 @@ class TiDBDatabase(DatabaseInterface):
             logger.error(f"TiDB health check failed: {e}")
             return False
 
+    # Frontend integration methods
+    async def get_all_tasks(self) -> List[Dict]:
+        """Get all tasks from database"""
+        cursor = self._get_cursor()
+        try:
+            # Since we don't have a tasks table yet, return empty list
+            # This will be implemented when tasks table is added
+            return []
+        except Error as e:
+            logger.error(f"Error getting all tasks: {e}")
+            return []
+        finally:
+            cursor.close()
+
+    async def get_tasks_by_meeting(self, meeting_id: str) -> List[Dict]:
+        """Get tasks for a specific meeting"""
+        cursor = self._get_cursor()
+        try:
+            # Since we don't have a tasks table yet, return empty list
+            # This will be implemented when tasks table is added
+            return []
+        except Error as e:
+            logger.error(f"Error getting tasks by meeting: {e}")
+            return []
+        finally:
+            cursor.close()
+
+    async def get_meeting_transcript(self, meeting_id: str) -> Optional[Dict]:
+        """Get full transcript data for a meeting"""
+        cursor = self._get_cursor()
+        try:
+            # Get meeting info
+            cursor.execute("""
+                SELECT id, title, created_at, updated_at FROM meetings WHERE id = %s
+            """, (meeting_id,))
+            
+            meeting_data = cursor.fetchone()
+            if not meeting_data:
+                return None
+
+            # Get transcript chunks
+            cursor.execute("""
+                SELECT id, transcript, timestamp, summary, action_items, key_points, created_at
+                FROM transcripts WHERE meeting_id = %s ORDER BY timestamp
+            """, (meeting_id,))
+
+            transcript_chunks = cursor.fetchall()
+
+            # Get participants
+            participants = await self.get_participants(meeting_id)
+
+            # Combine all transcript text
+            full_transcript = " ".join([chunk["transcript"] for chunk in transcript_chunks])
+
+            return {
+                "meeting_id": meeting_id,
+                "title": meeting_data["title"],
+                "transcript_chunks": [
+                    {
+                        "id": chunk["id"],
+                        "text": chunk["transcript"],
+                        "timestamp": chunk["timestamp"],
+                        "speaker": "Unknown",  # We don't have speaker info yet
+                        "summary": chunk["summary"],
+                        "action_items": chunk["action_items"],
+                        "key_points": chunk["key_points"]
+                    }
+                    for chunk in transcript_chunks
+                ],
+                "full_transcript": full_transcript,
+                "participants": [p["name"] for p in participants],
+                "duration": "Unknown",  # We don't track duration yet
+                "created_at": meeting_data["created_at"].isoformat() if meeting_data["created_at"] else None
+            }
+        except Error as e:
+            logger.error(f"Error getting meeting transcript: {e}")
+            return None
+        finally:
+            cursor.close()
+
     def __del__(self):
         """Clean up database connection"""
         try:
