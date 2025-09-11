@@ -1,13 +1,13 @@
 // ScrumBot Extension Configuration
 // Environment-based configuration for dev/prod
 
-const ENVIRONMENT = 'prod'; // Change to 'prod' when backend is ready
+const ENVIRONMENT = 'dev'; // Change to 'prod' when backend is ready
 
 const CONFIGS = {
   dev: {
     // Development - Mock servers for testing
-    BACKEND_URL: 'http://localhost:3002', // Mock REST API server
-    WEBSOCKET_URL: 'ws://localhost:8081/ws', // Mock WebSocket server
+    BACKEND_URL: 'http://localhost:5167', // Mock REST API server
+    WEBSOCKET_URL: 'ws://localhost:8080/ws', // Mock WebSocket server
     FRONTEND_URL: 'http://localhost:3000', // Local frontend or use prod
 
     // Mock API Endpoints
@@ -34,8 +34,8 @@ const CONFIGS = {
 
   prod: {
     // Production - Real backend services
-    BACKEND_URL: 'https://d42d52487c88.ngrok-free.app',
-    WEBSOCKET_URL: 'wss://30831910dddf.ngrok-free.app/ws',
+    BACKEND_URL: 'https://eb5bb66e5df1.ngrok-free.app',
+    WEBSOCKET_URL: 'wss://83465f8996cc.ngrok-free.app/ws',
     FRONTEND_URL: 'https://scrumy.vercel.app',
 
     // Production API Endpoints

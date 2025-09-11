@@ -1,23 +1,23 @@
 // Environment configuration
 const getApiUrl = () => {
   if (process.env.NEXT_PUBLIC_ENV === 'production') {
-    return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+    return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5167';
   }
-  return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+  return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5167';
 };
 
 const getWebSocketUrl = () => {
   if (process.env.NEXT_PUBLIC_ENV === 'production') {
-    return process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'ws://localhost:8080';
+    return process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'ws://localhost:8080/ws';
   }
-  return process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'ws://localhost:8080';
+  return process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'ws://localhost:8080/ws';
 };
 
 export const config = {
   apiUrl: getApiUrl(),
   websocketUrl: getWebSocketUrl(),
   environment: process.env.NEXT_PUBLIC_ENV || 'development',
-  
+
   // API endpoints
   endpoints: {
     health: process.env.NEXT_PUBLIC_HEALTH_ENDPOINT || '/health',
@@ -28,11 +28,11 @@ export const config = {
     integrations: process.env.NEXT_PUBLIC_INTEGRATIONS_ENDPOINT || '/api/integrations',
     projects: process.env.NEXT_PUBLIC_PROJECTS_ENDPOINT || '/api/projects'
   },
-  
+
   // Development settings
   isDevelopment: process.env.NEXT_PUBLIC_ENV === 'development',
   isProduction: process.env.NEXT_PUBLIC_ENV === 'production',
-  
+
   // API call configuration
   apiDefaults: {
     headers: {
