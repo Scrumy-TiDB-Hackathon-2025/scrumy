@@ -3,12 +3,13 @@ import { useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { FiHome, FiClipboard, FiUsers, FiCheckSquare, FiLink, FiSettings, FiChevronLeft, FiChevronRight } from "react-icons/fi";
 
+
 const navItems = [
   { label: "Home", icon: <FiHome />, path: "/" },
-  { label: "Project Trackers", icon: <FiClipboard />, path: "/project_tracker" },
+  // { label: "Project Trackers", icon: <FiClipboard />, path: "/project_tracker" },
   { label: "Meetings", icon: <FiUsers />, path: "/meetings" },
-  { label: "Action Items", icon: <FiCheckSquare />, path: "/action_items" },
-  { label: "Integrate", icon: <FiLink />, path: "/integrations" },
+  { label: "About", icon: <FiCheckSquare />, path: "/about" },
+  // { label: "Settings", icon: <FiLink />, path: "/settings" },
 ];
 
 export default function Sidebar() {
@@ -33,13 +34,7 @@ export default function Sidebar() {
       }`}
     >
       {/* Logo Section */}
-      <div className={`mb-4 flex items-center justify-center h-16 ${collapsed ? "px-0" : "px-2"}`}>
-        {!collapsed ? (
-          <span className="font-bold text-xl text-blue-600">LOGO</span>
-        ) : (
-          <span className="font-bold text-xl text-blue-600">L</span>
-        )}
-      </div>
+      <img src="/scrumy.svg" alt="ScrumAI Logo" className="h-10 w-auto" />
 
       {/* Collapse Button */}
       <button

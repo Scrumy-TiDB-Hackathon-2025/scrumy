@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { apiService } from '@/lib/api';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import NewChatSection from '@/components/NewChatSection';
 
 const MeetingsPage = () => {
   const router = useRouter();
@@ -586,6 +587,11 @@ const MeetingsPage = () => {
           <div className="text-gray-500">Start a meeting to see it appear here!</div>
         </div>
       )}
+
+      {/* Chat Sidebar - Fixed position */}
+      <div className="w-80 bg-white border-l border-gray-200 flex-shrink-0">
+        <NewChatSection />
+      </div>
     </div>
   );
 };
