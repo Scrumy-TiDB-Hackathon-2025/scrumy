@@ -17,29 +17,11 @@ router = APIRouter()
 # Initialize database using the same factory as main.py
 try:
     from app.database_interface import DatabaseFactory
-    import os
     
-    # Use same database type as main app
+    # Use environment-based database configuration (same as main.py)
+    db = DatabaseFactory.create_from_env()
+    
     db_type = os.getenv('DATABASE_TYPE', 'sqlite').lower()
-    
-    if db_type == 'tidb':
-        # TiDB configuration from environment
-        config = {
-            "type": "tidb",
-            "connection": {
-                "host": os.getenv('TIDB_HOST', 'localhost'),
-                "port": int(os.getenv('TIDB_PORT', 4000)),
-                "user": os.getenv('TIDB_USER'),
-                "password": os.getenv('TIDB_PASSWORD'),
-                "database": os.getenv('TIDB_DATABASE', 'scrumy_ai'),
-                "ssl_mode": os.getenv('TIDB_SSL_MODE', 'REQUIRED')
-            }
-        }
-        db = DatabaseFactory.create_from_config(config)
-    else:
-        # Use SQLite (same as main.py)
-        db = DatabaseFactory.create_database(db_type='sqlite')
-        
     logger.info(f"Frontend endpoints using {db_type.upper()} database")
 except Exception as e:
     logger.warning(f"Database not available, using mock data: {e}")

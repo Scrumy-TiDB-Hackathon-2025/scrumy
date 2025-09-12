@@ -440,26 +440,10 @@ class WebSocketManager:
     def _init_database(self):
         """Initialize database using same configuration as main app"""
         try:
-            db_type = os.getenv('DATABASE_TYPE', 'sqlite').lower()
+            # Use environment-based database configuration (same as main.py)
+            db = DatabaseFactory.create_from_env()
             
-            if db_type == 'tidb':
-                config = {
-                    "type": "tidb",
-                    "connection": {
-                        "host": os.getenv('TIDB_HOST', 'localhost'),
-                        "port": int(os.getenv('TIDB_PORT', 4000)),
-                        "user": os.getenv('TIDB_USER'),
-                        "password": os.getenv('TIDB_PASSWORD'),
-                        "database": os.getenv('TIDB_DATABASE', 'scrumy_ai'),
-                        "ssl_mode": os.getenv('TIDB_SSL_MODE', 'REQUIRED')
-                    }
-                }
-                db = DatabaseFactory.create_from_config(config)
-            else:
-                # For SQLite, pass the database path explicitly
-                db_path = os.getenv('SQLITE_DB_PATH', 'meeting_minutes.db')
-                db = DatabaseFactory.create_database(db_type='sqlite', db_path=db_path)
-                
+            db_type = os.getenv('DATABASE_TYPE', 'sqlite').lower()
             logger.info(f"WebSocket server using {db_type.upper()} database")
             print(f"✅ Database initialized: {db_type.upper()}")
             return db

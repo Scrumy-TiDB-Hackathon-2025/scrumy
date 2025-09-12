@@ -21,8 +21,8 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()  # Load environment variables from .env file
 
-# Change this line
-db = DatabaseFactory.create_database(db_type='tidb')
+# Use environment-based database configuration
+db = DatabaseFactory.create_from_env()
 
 class Block(BaseModel):
     """Represents a block of content in a section.
@@ -75,8 +75,8 @@ class TranscriptProcessor:
     def __init__(self):
         """Initialize the transcript processor."""
         logger.info("TranscriptProcessor initialized.")
-        # Change this line
-        self.db = DatabaseFactory.create_database(db_type='tidb')
+        # Use environment-based database configuration
+        self.db = DatabaseFactory.create_from_env()
         self.active_clients = []  # Track active client sessions
 
     async def process_transcript(self, text: str, model: str, model_name: str, chunk_size: int = 5000, overlap: int = 1000, custom_prompt: str = "", participants: Optional[List[Dict]] = None) -> Tuple[int, List[str]]:
