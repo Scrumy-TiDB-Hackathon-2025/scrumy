@@ -227,7 +227,7 @@ const MeetingDetailPage = () => {
         </div>
 
         {/* Content */}
-        <div className="p-6 overflow-y-auto">
+        <div className="p-6 overflow-y-auto h-[calc(100vh-200px)]">
           {activeTab === 'summary' && (
             <div className="space-y-8">
               {/* Overview */}

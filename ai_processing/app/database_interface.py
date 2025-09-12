@@ -143,6 +143,29 @@ class DatabaseFactory:
     """Factory class to create appropriate database implementation"""
 
     @staticmethod
+    def create_from_env() -> DatabaseInterface:
+        """Create database implementation from environment variables"""
+        import os
+        
+        # Check for DATABASE_TYPE environment variable
+        db_type = os.getenv("DATABASE_TYPE", "sqlite").lower()
+        
+        if db_type == "tidb":
+            # Try to get TiDB connection string
+            tidb_connection = os.getenv("TIDB_CONNECTION_STRING")
+            if tidb_connection:
+                try:
+                    from .tidb_database import TiDBDatabase
+                    return TiDBDatabase(connection_string=tidb_connection)
+                except Exception as e:
+                    logger.warning(f"Failed to initialize TiDB: {e}. Falling back to SQLite.")
+        
+        # Default to SQLite
+        from .sqlite_database import SQLiteDatabase
+        db_path = os.getenv("SQLITE_DB_PATH", "meeting_minutes.db")
+        return SQLiteDatabase(db_path=db_path)
+
+    @staticmethod
     def create_database(db_type: str, **kwargs) -> DatabaseInterface:
         """
         Create database implementation based on type.
@@ -180,6 +203,19 @@ class DatabaseFactory:
 
         connection_params = config.get("connection", {})
         return DatabaseFactory.create_database(db_type, **connection_params)
+
+    # Frontend integration methods
+    async def get_all_tasks(self) -> List[Dict]:
+        """Get all tasks from database"""
+        pass
+
+    async def get_tasks_by_meeting(self, meeting_id: str) -> List[Dict]:
+        """Get tasks for a specific meeting"""
+        pass
+
+    async def get_meeting_transcript(self, meeting_id: str) -> Optional[Dict]:
+        """Get full transcript data for a meeting"""
+        pass
 
 
 # Database configuration templates for easy setup
