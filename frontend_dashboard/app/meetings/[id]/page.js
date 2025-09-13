@@ -15,6 +15,11 @@ const MeetingDetailPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [liveTranscript, setLiveTranscript] = useState([]);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [lastRefresh, setLastRefresh] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [meetingActive, setMeetingActive] = useState(true);
+  const [lastTranscriptUpdate, setLastTranscriptUpdate] = useState(null);
 
   const handleTranscriptUpdate = useCallback((data) => {
     if (data.text) {
@@ -30,6 +35,62 @@ const MeetingDetailPage = () => {
   }, []);
 
   const { isConnected } = useWebSocket(selectedMeeting?.id, handleTranscriptUpdate);
+
+  const refreshTranscript = useCallback(async () => {
+    if (!meetingId || !selectedMeeting) return;
+    
+    setRefreshing(true);
+    try {
+      const response = await apiService.getMeetingDetail(meetingId);
+      if (response.data) {
+        const transcriptData = response.data;
+        const formattedTranscript = transcriptData.transcript_chunks?.map((chunk, index) => ({
+          speaker: chunk.speaker || `Speaker ${index + 1}`,
+          time: chunk.timestamp || '0:00',
+          text: chunk.text || '',
+          avatar: chunk.speaker ? chunk.speaker.charAt(0).toUpperCase() : 'S'
+        })) || [];
+        
+        // Check if transcript has new content
+        const currentTranscriptLength = selectedMeeting.transcript?.length || 0;
+        const newTranscriptLength = formattedTranscript.length;
+        
+        if (newTranscriptLength > currentTranscriptLength) {
+          setLastTranscriptUpdate(new Date());
+          setMeetingActive(true);
+        } else {
+          // Check if meeting has been inactive for more than 2 minutes
+          const now = new Date();
+          const lastUpdate = lastTranscriptUpdate || now;
+          const inactiveTime = (now - lastUpdate) / 1000 / 60; // minutes
+          
+          if (inactiveTime > 2) {
+            setMeetingActive(false);
+            setAutoRefresh(false); // Stop auto-refresh
+          }
+        }
+        
+        setSelectedMeeting(prev => ({
+          ...prev,
+          transcript: formattedTranscript,
+          overview: transcriptData.transcript || prev.summary
+        }));
+        setLastRefresh(new Date());
+      }
+    } catch (err) {
+      console.error('Failed to refresh transcript:', err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [meetingId, selectedMeeting, lastTranscriptUpdate]);
+
+  // Auto-refresh effect for both tabs
+  useEffect(() => {
+    if (!autoRefresh) return;
+    
+    const interval = setInterval(refreshTranscript, 5000); // Refresh every 5 seconds
+    return () => clearInterval(interval);
+  }, [autoRefresh, refreshTranscript]);
 
   useEffect(() => {
     const fetchMeeting = async () => {
@@ -218,11 +279,36 @@ const MeetingDetailPage = () => {
             >
               Transcript
             </button>
-            {activeTab === 'transcript' && (
-              <button className="ml-auto px-4 py-2 text-sm text-blue-600 hover:text-blue-700">
-                ✏️ Edit Transcript
+            <div className="ml-auto flex items-center gap-2">
+              <button 
+                onClick={refreshTranscript}
+                disabled={refreshing}
+                className={`px-3 py-1 text-sm border border-gray-300 rounded ${
+                  refreshing 
+                    ? 'text-gray-400 cursor-not-allowed' 
+                    : 'text-gray-600 hover:text-gray-800'
+                }`}
+                title={`Refresh ${activeTab}`}
+              >
+                {refreshing ? '⏳ Refreshing...' : '🔄 Refresh'}
               </button>
-            )}
+              <button 
+                onClick={() => setAutoRefresh(!autoRefresh)}
+                className={`px-3 py-1 text-sm border rounded ${
+                  autoRefresh 
+                    ? 'text-green-600 border-green-300 bg-green-50' 
+                    : 'text-gray-600 border-gray-300'
+                }`}
+                title={autoRefresh ? 'Disable auto-refresh' : 'Enable auto-refresh'}
+              >
+                {autoRefresh ? '⏸️ Auto' : '▶️ Auto'}
+              </button>
+              {activeTab === 'transcript' && (
+                <button className="px-3 py-1 text-sm text-blue-600 hover:text-blue-700 border border-blue-300 rounded">
+                  ✏️ Edit
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -230,6 +316,23 @@ const MeetingDetailPage = () => {
         <div className="p-6 overflow-y-auto h-[calc(100vh-200px)]">
           {activeTab === 'summary' && (
             <div className="space-y-8">
+              {/* Refresh Status */}
+              <div className="flex justify-between items-center mb-4">
+                <div className="text-sm text-gray-600">
+                  {lastRefresh && (
+                    <span className="text-xs text-gray-400">
+                      Last updated: {lastRefresh.toLocaleTimeString()}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <div className={`w-2 h-2 rounded-full ${autoRefresh ? 'bg-blue-500' : 'bg-gray-400'}`}></div>
+                  <span className="text-gray-500">
+                    Auto-refresh {autoRefresh ? 'ON' : 'OFF'}
+                  </span>
+                </div>
+              </div>
+              
               {/* Overview */}
               <div>
                 <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
@@ -295,12 +398,31 @@ const MeetingDetailPage = () => {
               <div className="flex justify-between items-center mb-6">
                 <div className="text-sm text-gray-600">
                   <strong>Speakers</strong>
+                  {lastRefresh && (
+                    <span className="ml-2 text-xs text-gray-400">
+                      Last updated: {lastRefresh.toLocaleTimeString()}
+                    </span>
+                  )}
                 </div>
-                <div className="flex items-center gap-2 text-xs">
-                  <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-gray-400'}`}></div>
-                  <span className="text-gray-500">
-                    {isConnected ? 'Live' : 'Offline'}
-                  </span>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2 text-xs">
+                    <div className={`w-2 h-2 rounded-full ${meetingActive ? 'bg-green-500' : 'bg-orange-500'}`}></div>
+                    <span className="text-gray-500">
+                      Meeting {meetingActive ? 'Active' : 'Ended'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <div className={`w-2 h-2 rounded-full ${autoRefresh ? 'bg-blue-500' : 'bg-gray-400'}`}></div>
+                    <span className="text-gray-500">
+                      Auto-refresh {autoRefresh ? 'ON' : 'OFF'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-gray-400'}`}></div>
+                    <span className="text-gray-500">
+                      {isConnected ? 'Live' : 'Offline'}
+                    </span>
+                  </div>
                 </div>
               </div>
               
