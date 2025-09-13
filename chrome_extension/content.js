@@ -377,6 +377,14 @@ async function toggleRecording() {
 async function startEnhancedRecording() {
   console.log("🎬 Starting enhanced recording with participant detection...");
 
+  // Clear transcript log for new recording session
+  transcriptLog = [];
+  const countElement = document.getElementById("transcript-count");
+  if (countElement) {
+    countElement.textContent = "0";
+  }
+  console.log("🧹 Cleared transcript log for new recording session");
+
   // Get UI elements (fallback to enhanced UI or basic UI)
   const button = document.getElementById("scrumbot-toggle");
   const statusElement = document.getElementById("connection-status");
@@ -544,6 +552,14 @@ function completeRecordingStop() {
 
 function startMultiTabRecording(button, statusElement) {
   console.log("🎬 Starting multi-tab recording...");
+
+  // Clear transcript log for new recording session
+  transcriptLog = [];
+  const countElement = document.getElementById("transcript-count");
+  if (countElement) {
+    countElement.textContent = "0";
+  }
+  console.log("🧹 Cleared transcript log for new recording session");
 
   // Update UI to show we're starting
   button.innerHTML = "⏳ Opening capture...";
