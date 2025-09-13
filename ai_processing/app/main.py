@@ -1013,7 +1013,7 @@ async def process_transcript_with_tools(request: ProcessTranscriptWithToolsReque
             meeting_context
         )
 
-        # Extract participants for integration
+        # Extract participants for response formatting
         participants = []
         if 'speakers' in result:
             participants = [
@@ -1022,21 +1022,9 @@ async def process_transcript_with_tools(request: ProcessTranscriptWithToolsReque
                 if isinstance(speaker, dict)
             ]
 
-        # Notify integration systems (async, non-blocking)
-        try:
-            asyncio.create_task(notify_meeting_processed(
-                meeting_id=request.meeting_id,
-                meeting_title=f"Meeting {request.meeting_id}",
-                platform=request.platform,
-                participants=participants,
-                transcript=request.text,
-                summary_data=result.get('summary', {}),
-                tasks_data=result.get('tasks', []),
-                speakers_data=result.get('speakers', [])
-            ))
-            logger.info(f"Triggered integration processing for meeting {request.meeting_id}")
-        except Exception as integration_error:
-            logger.warning(f"Integration notification failed: {integration_error}")
+        # Skip integration notification - already handled by IntegratedAIProcessor
+        # This prevents duplicate task creation from multiple pathways
+        logger.info(f"Skipping integration notification for {request.meeting_id} - handled by IntegratedAIProcessor to prevent duplicates")
 
         # Format response to match Chrome extension expectations
         return {

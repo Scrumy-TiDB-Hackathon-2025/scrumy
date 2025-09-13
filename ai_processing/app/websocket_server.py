@@ -280,6 +280,7 @@ class MeetingSession:
         self.meeting_url = ""
         self.transcript_chunks: List[Dict] = []
         self.cumulative_transcript = ""
+        self._ai_processing_completed = False  # Prevent duplicate AI processing
 
         # Initialize buffer system immediately (no AI dependency)
         self.buffer = MeetingBuffer(meeting_id)
@@ -1192,6 +1193,11 @@ class WebSocketManager:
                 except Exception as db_error:
                     logger.error(f"Failed to save full transcript: {db_error}")
 
+            # Check if AI processing already completed to prevent duplicates
+            if session._ai_processing_completed:
+                print(f"⚠️ AI processing already completed for {session.meeting_id} - skipping duplicate")
+                return
+
             # Try to generate AI summary and tasks (may fail if no API key)
             summary = {}
             tasks = {}
@@ -1223,6 +1229,9 @@ class WebSocketManager:
 
                 print(f"🎉 AI processing completed successfully!")
                 logger.info(f"AI processing completed for meeting {session.meeting_id}")
+                
+                # Mark AI processing as completed to prevent duplicates
+                session._ai_processing_completed = True
 
             except Exception as ai_error:
                 print(f"⚠️ AI processing failed: {str(ai_error)}")

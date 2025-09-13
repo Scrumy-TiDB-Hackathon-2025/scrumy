@@ -278,7 +278,7 @@ class AIProcessingIntegrationBridge:
     async def create_tasks_from_ai_results(self, ai_tasks: List[Dict],
                                          meeting_context: Optional[Dict] = None) -> Dict:
         """
-        Create tasks in integration platforms using two-layer architecture.
+        Create tasks in integration platforms using two-layer architecture with global deduplication.
 
         Args:
             ai_tasks: List of tasks extracted by AI processing (with all fields)
@@ -287,6 +287,27 @@ class AIProcessingIntegrationBridge:
         Returns:
             Dict with integration results and statistics
         """
+        global _processed_meetings
+        
+        # Global deduplication check
+        meeting_id = meeting_context.get('meeting_id') if meeting_context else None
+        if meeting_id and meeting_id in _processed_meetings:
+            logger.warning(f"Meeting {meeting_id} already processed - preventing duplicate task creation")
+            return {
+                "integration_enabled": True,
+                "reason": "Meeting already processed - duplicate prevention",
+                "tasks_processed": len(ai_tasks),
+                "tasks_created": 0,
+                "successful_integrations": [],
+                "failed_integrations": [],
+                "errors": ["Duplicate processing prevented"]
+            }
+        
+        # Mark meeting as processed
+        if meeting_id:
+            _processed_meetings.add(meeting_id)
+            logger.info(f"Marked meeting {meeting_id} as processed")
+        
         if not self.enabled:
             return {
                 "integration_enabled": False,
@@ -461,15 +482,27 @@ class AIProcessingIntegrationBridge:
 # Factory function for easy integration
 def create_integration_bridge(config: Optional[Dict] = None) -> AIProcessingIntegrationBridge:
     """
-    Factory function to create an integration bridge instance.
+    Factory function to create an integration bridge instance with singleton pattern.
 
     Args:
         config: Optional configuration dict
 
     Returns:
-        AIProcessingIntegrationBridge instance
+        AIProcessingIntegrationBridge instance (singleton)
     """
-    return AIProcessingIntegrationBridge(config)
+    global _global_bridge_instance
+    
+    if _global_bridge_instance is None:
+        _global_bridge_instance = AIProcessingIntegrationBridge(config)
+        logger.info("Created global integration bridge singleton")
+    else:
+        logger.debug("Reusing existing integration bridge singleton")
+    
+    return _global_bridge_instance
+
+# Global singleton instance and deduplication
+_global_bridge_instance = None
+_processed_meetings = set()  # Global deduplication across all instances
 
 # Default configuration for AI processing
 DEFAULT_INTEGRATION_CONFIG = {
