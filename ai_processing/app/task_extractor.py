@@ -56,9 +56,9 @@ class TaskExtractor:
 
         Respond with valid JSON only, no additional text."""
 
-        # Build comprehensive user prompt
+        # Build comprehensive user prompt with grammar focus
         user_prompt = f"""
-        Analyze this meeting transcript comprehensively:
+        Analyze this meeting transcript and extract clear, well-written tasks:
 
         TRANSCRIPT:
         {transcript}
@@ -66,25 +66,31 @@ class TaskExtractor:
         MEETING CONTEXT:
         {json.dumps(meeting_context or {}, indent=2)}
 
+        CRITICAL: The transcript may contain speech recognition errors. You MUST:
+        - Correct obvious grammar and spelling mistakes
+        - Create clear, professional task titles
+        - Fix garbled words using context clues
+        - Write tasks as proper action items
+
+        EXAMPLES OF CORRECTIONS:
+        - "Use dedication module by Friday" → "Complete user authentication module by Friday"
+        - "Right unites for P process" → "Write unit tests for payment processing"
+        - "Create user resolution from I signed" → "Create user registration form"
+        - "Finalize API paper documentation" → "Finalize API documentation"
+
         ANALYSIS REQUIREMENTS:
 
-        1. EXPLICIT TASKS - Find direct action items like:
-           - "I'll do X by Y date"
-           - "Can you handle Z"
-           - "We need to complete ABC"
-           - "Action item: XYZ"
+        1. EXPLICIT TASKS - Find direct action items and CORRECT the language:
+           - Fix speech recognition errors
+           - Create clear, actionable titles
+           - Ensure proper grammar and spelling
 
-        2. IMPLICIT TASKS - Identify implied tasks like:
+        2. IMPLICIT TASKS - Identify implied tasks with CLEAR descriptions:
            - Problems mentioned without solutions
            - Requirements that need follow-up
            - Decisions that require implementation
 
-        3. TASK DEPENDENCIES - Analyze relationships:
-           - Which tasks must be done before others
-           - Which can be done in parallel
-           - Critical path analysis
-
-        4. TASK PRIORITIES - Determine urgency:
+        3. TASK PRIORITIES - Determine urgency:
            - High: Blocking issues, urgent deadlines
            - Medium: Important but not urgent
            - Low: Nice-to-have improvements
@@ -94,14 +100,14 @@ class TaskExtractor:
             "tasks": [
                 {{
                     "id": "task_1",
-                    "title": "Clear, actionable task title",
-                    "description": "Detailed description",
+                    "title": "Clear, grammatically correct task title (fix any speech errors)",
+                    "description": "Detailed description with proper grammar",
                     "assignee": "Person assigned or 'Unassigned'",
                     "due_date": "YYYY-MM-DD or null",
                     "priority": "high|medium|low",
                     "category": "explicit|implicit",
                     "dependencies": ["task_2", "task_3"],
-                    "context": "Relevant transcript context",
+                    "context": "Relevant transcript context (corrected for grammar)",
                     "confidence": 0.9
                 }}
             ],
