@@ -627,8 +627,8 @@ async def get_summary(meeting_id: str):
         )
 
 @app.post("/save-transcript")
-async def save_transcript(request: SaveTranscriptRequest):
-    """Save transcript segments for a meeting without processing"""
+async def save_transcript(request: SaveTranscriptRequest, background_tasks: BackgroundTasks):
+    """Save transcript segments for a meeting and extract tasks"""
     try:
         logger.info(f"🚀 [DEBUG] save-transcript called with:")
         logger.info(f"  - meeting_title: {request.meeting_title}")
@@ -650,6 +650,7 @@ async def save_transcript(request: SaveTranscriptRequest):
         await db.save_meeting(meeting_id, request.meeting_title)
 
         # Save each transcript segment
+        full_transcript = ""
         for transcript in request.transcripts:
             await db.save_meeting_transcript(
                 meeting_id=meeting_id,
@@ -659,12 +660,65 @@ async def save_transcript(request: SaveTranscriptRequest):
                 action_items="",
                 key_points=""
             )
+            full_transcript += transcript.text + " "
+
+        # Save participants if provided
+        if hasattr(request, 'participants') and request.participants:
+            await db.save_participants_batch(meeting_id, request.participants)
+
+        # Extract and save tasks in background
+        if full_transcript.strip():
+            background_tasks.add_task(
+                extract_and_save_tasks,
+                meeting_id,
+                full_transcript.strip(),
+                request.meeting_title
+            )
 
         logger.info(f"✅ [DEBUG] Transcripts saved successfully with meeting_id: {meeting_id}")
         return {"status": "success", "message": "Transcript saved successfully", "meeting_id": meeting_id}
     except Exception as e:
         logger.error(f"Error saving transcript: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+async def extract_and_save_tasks(meeting_id: str, transcript: str, meeting_title: str):
+    """Background task to extract and save tasks from transcript"""
+    try:
+        logger.info(f"Starting task extraction for meeting {meeting_id}")
+        
+        # Initialize task extractor
+        ai_processor = AIProcessor()
+        task_extractor = TaskExtractor(ai_processor)
+        
+        # Extract tasks
+        meeting_context = {
+            "meeting_id": meeting_id,
+            "title": meeting_title
+        }
+        
+        tasks_result = await task_extractor.extract_comprehensive_tasks(transcript, meeting_context)
+        
+        if tasks_result and tasks_result.get('tasks'):
+            # Save each task to database
+            for task in tasks_result['tasks']:
+                task_id = f"task-{uuid.uuid4()}"
+                await db.save_task(
+                    task_id=task_id,
+                    meeting_id=meeting_id,
+                    title=task.get('title', 'Untitled Task'),
+                    description=task.get('description', ''),
+                    assignee=task.get('assignee', 'Unassigned'),
+                    priority=task.get('priority', 'medium'),
+                    status='pending'
+                )
+            
+            logger.info(f"Successfully extracted and saved {len(tasks_result['tasks'])} tasks for meeting {meeting_id}")
+        else:
+            logger.info(f"No tasks extracted for meeting {meeting_id}")
+            
+    except Exception as e:
+        logger.error(f"Error extracting tasks for meeting {meeting_id}: {e}")
+        # Don't raise exception to avoid breaking the main flow
 
 @app.get("/get-model-config")
 async def get_model_config():

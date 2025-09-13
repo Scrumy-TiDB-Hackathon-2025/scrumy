@@ -160,7 +160,14 @@ class DatabaseInterface(ABC):
         """Check if database connection is healthy"""
         pass
 
-    # Frontend integration methods (required for cross-compatibility)
+    # Task management methods
+    @abstractmethod
+    async def save_task(self, task_id: str, meeting_id: str, title: str, 
+                       description: str = "", assignee: str = "Unassigned", 
+                       priority: str = "medium", status: str = "pending") -> bool:
+        """Save task to database"""
+        pass
+
     @abstractmethod
     async def get_all_tasks(self) -> List[Dict]:
         """Get all tasks from database"""

@@ -1210,6 +1210,21 @@ class WebSocketManager:
                 )
                 task_count = len(tasks.get('tasks', []))
                 print(f"✅ Tasks extracted: {task_count} action items found")
+                
+                # Save tasks to database
+                if self.db and tasks.get('tasks'):
+                    for task in tasks['tasks']:
+                        task_id = f"task-{uuid.uuid4()}"
+                        await self.db.save_task(
+                            task_id=task_id,
+                            meeting_id=session.meeting_id,
+                            title=task.get('title', 'Untitled Task'),
+                            description=task.get('description', ''),
+                            assignee=task.get('assignee', 'Unassigned'),
+                            priority=task.get('priority', 'medium'),
+                            status='pending'
+                        )
+                    print(f"💾 Saved {len(tasks['tasks'])} tasks to database")
 
                 print(f"🎉 AI processing completed successfully!")
                 logger.info(f"AI processing completed for meeting {session.meeting_id}")

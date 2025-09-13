@@ -240,12 +240,6 @@ const ActionItemsPage = () => {
               
               <div className="flex items-center gap-2 ml-6">
                 <button 
-                  onClick={() => handleEdit(item.id)}
-                  className="px-3 py-1 border border-gray-300 rounded text-sm hover:bg-gray-50 flex items-center gap-1"
-                >
-                  ✏️ Edit
-                </button>
-                <button 
                   onClick={() => handleReject(item.id)}
                   className="px-3 py-1 border border-red-300 text-red-600 rounded text-sm hover:bg-red-50 flex items-center gap-1"
                 >
@@ -258,16 +252,6 @@ const ActionItemsPage = () => {
                   ✓ Approve
                 </button>
               </div>
-            </div>
-            
-            {/* View Details link - positioned at bottom right */}
-            <div className="flex justify-end mt-4">
-              <button 
-                onClick={() => handleViewDetails(item.id)}
-                className="text-blue-600 hover:text-blue-700 text-sm"
-              >
-                View Details
-              </button>
             </div>
           </div>
           ))}
