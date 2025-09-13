@@ -127,6 +127,26 @@ class TiDBDatabase(DatabaseInterface):
                 )
             """)
 
+            # Tasks table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS tasks (
+                    id VARCHAR(255) PRIMARY KEY,
+                    meeting_id VARCHAR(255) NOT NULL,
+                    title VARCHAR(500) NOT NULL,
+                    description TEXT,
+                    assignee VARCHAR(255),
+                    due_date DATE,
+                    priority ENUM('low', 'medium', 'high') DEFAULT 'medium',
+                    status ENUM('pending', 'in_progress', 'completed') DEFAULT 'pending',
+                    notion_page_id VARCHAR(255),
+                    slack_message_ts VARCHAR(255),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    FOREIGN KEY (meeting_id) REFERENCES meetings(id) ON DELETE CASCADE,
+                    INDEX idx_meeting_status (meeting_id, status)
+                )
+            """)
+
             # Settings table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS settings (
@@ -741,6 +761,7 @@ class TiDBDatabase(DatabaseInterface):
         cursor = self._get_cursor()
         try:
             # Clear in reverse order due to foreign keys
+            cursor.execute("DELETE FROM tasks")
             cursor.execute("DELETE FROM participants")
             cursor.execute("DELETE FROM transcript_chunks")
             cursor.execute("DELETE FROM summary_processes")
@@ -771,14 +792,67 @@ class TiDBDatabase(DatabaseInterface):
             logger.error(f"TiDB health check failed: {e}")
             return False
 
+    # Task management methods
+    async def save_task(self, task_id: str, meeting_id: str, title: str, 
+                       description: str = None, assignee: str = None, 
+                       due_date: str = None, priority: str = 'medium', 
+                       status: str = 'pending') -> bool:
+        """Save a task to the database"""
+        cursor = self._get_cursor()
+        try:
+            cursor.execute("""
+                INSERT INTO tasks 
+                (id, meeting_id, title, description, assignee, due_date, priority, status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                title = VALUES(title),
+                description = VALUES(description),
+                assignee = VALUES(assignee),
+                due_date = VALUES(due_date),
+                priority = VALUES(priority),
+                status = VALUES(status),
+                updated_at = CURRENT_TIMESTAMP
+            """, (task_id, meeting_id, title, description, assignee, due_date, priority, status))
+            
+            self.connection.commit()
+            return True
+        except Error as e:
+            logger.error(f"Error saving task: {e}")
+            return False
+        finally:
+            cursor.close()
+
     # Frontend integration methods
     async def get_all_tasks(self) -> List[Dict]:
         """Get all tasks from database"""
         cursor = self._get_cursor()
         try:
-            # Since we don't have a tasks table yet, return empty list
-            # This will be implemented when tasks table is added
-            return []
+            cursor.execute("""
+                SELECT id, meeting_id, title, description, assignee, due_date, 
+                       priority, status, notion_page_id, slack_message_ts, 
+                       created_at, updated_at
+                FROM tasks 
+                ORDER BY created_at DESC
+            """)
+            
+            tasks = cursor.fetchall()
+            return [
+                {
+                    "id": task["id"],
+                    "meeting_id": task["meeting_id"],
+                    "title": task["title"],
+                    "description": task["description"],
+                    "assignee": task["assignee"],
+                    "due_date": task["due_date"].isoformat() if task["due_date"] else None,
+                    "priority": task["priority"],
+                    "status": task["status"],
+                    "notion_page_id": task["notion_page_id"],
+                    "slack_message_ts": task["slack_message_ts"],
+                    "created_at": task["created_at"].isoformat() if task["created_at"] else None,
+                    "updated_at": task["updated_at"].isoformat() if task["updated_at"] else None
+                }
+                for task in tasks
+            ]
         except Error as e:
             logger.error(f"Error getting all tasks: {e}")
             return []
@@ -789,9 +863,33 @@ class TiDBDatabase(DatabaseInterface):
         """Get tasks for a specific meeting"""
         cursor = self._get_cursor()
         try:
-            # Since we don't have a tasks table yet, return empty list
-            # This will be implemented when tasks table is added
-            return []
+            cursor.execute("""
+                SELECT id, meeting_id, title, description, assignee, due_date, 
+                       priority, status, notion_page_id, slack_message_ts, 
+                       created_at, updated_at
+                FROM tasks 
+                WHERE meeting_id = %s
+                ORDER BY created_at DESC
+            """, (meeting_id,))
+            
+            tasks = cursor.fetchall()
+            return [
+                {
+                    "id": task["id"],
+                    "meeting_id": task["meeting_id"],
+                    "title": task["title"],
+                    "description": task["description"],
+                    "assignee": task["assignee"],
+                    "due_date": task["due_date"].isoformat() if task["due_date"] else None,
+                    "priority": task["priority"],
+                    "status": task["status"],
+                    "notion_page_id": task["notion_page_id"],
+                    "slack_message_ts": task["slack_message_ts"],
+                    "created_at": task["created_at"].isoformat() if task["created_at"] else None,
+                    "updated_at": task["updated_at"].isoformat() if task["updated_at"] else None
+                }
+                for task in tasks
+            ]
         except Error as e:
             logger.error(f"Error getting tasks by meeting: {e}")
             return []
@@ -821,28 +919,60 @@ class TiDBDatabase(DatabaseInterface):
 
             # Get participants
             participants = await self.get_participants(meeting_id)
+            participant_names = [p["name"] for p in participants]
 
             # Combine all transcript text
             full_transcript = " ".join([chunk["transcript"] for chunk in transcript_chunks])
+            
+            # Calculate duration from transcript timestamps or text length
+            duration_text = "Unknown duration"
+            if transcript_chunks:
+                # Try to parse timestamps to calculate duration
+                try:
+                    first_timestamp = transcript_chunks[0]["timestamp"]
+                    last_timestamp = transcript_chunks[-1]["timestamp"]
+                    
+                    # If timestamps are numeric (seconds)
+                    if first_timestamp.isdigit() and last_timestamp.isdigit():
+                        duration_seconds = int(last_timestamp) - int(first_timestamp)
+                        duration_minutes = max(1, duration_seconds // 60)
+                        duration_text = f"{duration_minutes} minutes"
+                    else:
+                        # Estimate from text length
+                        total_chars = len(full_transcript)
+                        estimated_minutes = max(1, total_chars // (150 * 5))  # ~150 words/min, ~5 chars/word
+                        duration_text = f"{estimated_minutes} minutes"
+                except:
+                    # Fallback to text length estimation
+                    total_chars = len(full_transcript)
+                    estimated_minutes = max(1, total_chars // (150 * 5))
+                    duration_text = f"{estimated_minutes} minutes"
+
+            # Assign speakers to transcript chunks (simple round-robin if no speaker info)
+            formatted_chunks = []
+            for i, chunk in enumerate(transcript_chunks):
+                # Try to extract speaker from transcript text or use participant rotation
+                speaker = "Unknown"
+                if participant_names:
+                    speaker = participant_names[i % len(participant_names)]
+                
+                formatted_chunks.append({
+                    "id": chunk["id"],
+                    "text": chunk["transcript"],
+                    "timestamp": chunk["timestamp"],
+                    "speaker": speaker,
+                    "summary": chunk["summary"],
+                    "action_items": chunk["action_items"],
+                    "key_points": chunk["key_points"]
+                })
 
             return {
                 "meeting_id": meeting_id,
                 "title": meeting_data["title"],
-                "transcript_chunks": [
-                    {
-                        "id": chunk["id"],
-                        "text": chunk["transcript"],
-                        "timestamp": chunk["timestamp"],
-                        "speaker": "Unknown",  # We don't have speaker info yet
-                        "summary": chunk["summary"],
-                        "action_items": chunk["action_items"],
-                        "key_points": chunk["key_points"]
-                    }
-                    for chunk in transcript_chunks
-                ],
+                "transcript_chunks": formatted_chunks,
                 "full_transcript": full_transcript,
-                "participants": [p["name"] for p in participants],
-                "duration": "Unknown",  # We don't track duration yet
+                "participants": participant_names,
+                "duration": duration_text,
                 "created_at": meeting_data["created_at"].isoformat() if meeting_data["created_at"] else None
             }
         except Error as e:

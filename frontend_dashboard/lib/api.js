@@ -77,7 +77,12 @@ export const apiService = {
   getMeetingDetail: (id) => api.get(`${config.endpoints.meetings}/${id}`),
   
   // Tasks
-  getTasks: () => api.get(config.endpoints.tasks),
+  getTasks: (meetingId) => {
+    if (meetingId) {
+      return api.get(`${config.endpoints.tasks}?meeting_id=${meetingId}`);
+    }
+    return api.get(config.endpoints.tasks);
+  },
   getTasksByMeeting: (meetingId) => api.get(`${config.endpoints.tasks}?meeting_id=${meetingId}`),
   
   // Transcripts

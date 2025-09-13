@@ -3,9 +3,25 @@ import json
 from datetime import datetime
 from typing import Optional, Dict
 import logging
-from sentence_transformers import SentenceTransformer
-from shared.db_config import SharedDBConfig
 import numpy as np
+
+# Optional imports for vector embeddings
+try:
+    from sentence_transformers import SentenceTransformer
+    SENTENCE_TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    SENTENCE_TRANSFORMERS_AVAILABLE = False
+    SentenceTransformer = None
+
+try:
+    import sys
+    import os
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from shared.db_config import SharedDBConfig
+    VECTOR_STORE_AVAILABLE = True
+except ImportError:
+    VECTOR_STORE_AVAILABLE = False
+    SharedDBConfig = None
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +35,15 @@ class DatabaseManager:
             'db': db,
             'charset': 'utf8mb4'
         }
-        self.vector_store_engine = SharedDBConfig.get_engine()
-        self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+        if VECTOR_STORE_AVAILABLE and SharedDBConfig:
+            self.vector_store_engine = SharedDBConfig.get_engine()
+        else:
+            self.vector_store_engine = None
+            
+        if SENTENCE_TRANSFORMERS_AVAILABLE:
+            self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+        else:
+            self.embedding_model = None
 
     async def _init_db(self):
         """Initialize the database with required tables"""
@@ -299,6 +322,10 @@ class DatabaseManager:
 
     async def save_to_vector_store(self, meeting_id: str, title: str, content: str, metadata: dict = None):
         """Save transcript content to vector store"""
+        if not SENTENCE_TRANSFORMERS_AVAILABLE or not self.embedding_model or not VECTOR_STORE_AVAILABLE or not self.vector_store_engine:
+            logger.warning("Vector store functionality disabled - dependencies not available")
+            return True  # Return success to not break the flow
+            
         try:
             # Generate embedding
             embedding = self.embedding_model.encode(content).tolist()

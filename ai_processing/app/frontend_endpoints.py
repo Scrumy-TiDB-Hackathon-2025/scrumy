@@ -144,28 +144,86 @@ async def get_meetings_list():
         if db:
             meetings = await db.get_all_meetings()
             formatted_meetings = []
+            total_duration_minutes = 0
+            total_action_items = 0
+            
             for meeting in meetings:
+                meeting_id = meeting.get('id', '')
+                
                 # Get tasks if method exists, otherwise default to 0
                 if hasattr(db, 'get_tasks_by_meeting'):
-                    tasks = await db.get_tasks_by_meeting(meeting.get('id', ''))
+                    tasks = await db.get_tasks_by_meeting(meeting_id)
                 else:
                     tasks = []
+                
+                # Get participants count
+                participants = await db.get_participants(meeting_id) if hasattr(db, 'get_participants') else []
+                attendees_count = len(participants)
+                
+                # Get transcript data to calculate duration
+                transcript_data = await db.get_meeting_transcript(meeting_id) if hasattr(db, 'get_meeting_transcript') else None
+                duration_text = "Unknown duration"
+                duration_minutes = 30  # default
+                
+                if transcript_data and transcript_data.get('transcript_chunks'):
+                    # Calculate duration from transcript chunks
+                    chunks = transcript_data['transcript_chunks']
+                    if chunks:
+                        # Estimate duration based on text length (rough approximation)
+                        total_chars = sum(len(chunk.get('text', '')) for chunk in chunks)
+                        # Assume ~150 words per minute, ~5 chars per word
+                        estimated_minutes = max(1, total_chars // (150 * 5))
+                        duration_minutes = estimated_minutes
+                        duration_text = f"{estimated_minutes} minutes"
+                
+                # Format time from created_at
+                created_at = meeting.get('created_at', '')
+                time_text = "Unknown time"
+                date_text = "Unknown date"
+                
+                if created_at:
+                    try:
+                        if isinstance(created_at, str):
+                            dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                        else:
+                            dt = created_at
+                        time_text = dt.strftime("%I:%M%p")
+                        date_text = dt.strftime("%Y-%m-%d")
+                    except:
+                        date_text = str(created_at)[:10] if created_at else "Unknown date"
+                
+                # Generate summary from transcript or use default
+                summary = f"Meeting summary for {meeting.get('title', 'meeting')}"
+                if transcript_data and transcript_data.get('full_transcript'):
+                    # Use first 100 characters of transcript as summary
+                    full_text = transcript_data['full_transcript']
+                    if len(full_text) > 100:
+                        summary = full_text[:100] + "..."
+                    else:
+                        summary = full_text
+                
+                action_items_count = len(tasks)
+                total_action_items += action_items_count
+                total_duration_minutes += duration_minutes
+                
                 formatted_meetings.append({
-                    "id": meeting.get('id'),
+                    "id": meeting_id,
                     "title": meeting.get('title', 'Untitled Meeting'),
-                    "date": meeting.get('created_at', '2025-01-08')[:10],
-                    "time": "9:00AM",
-                    "duration": "35 minutes",
-                    "attendees": 4,
-                    "actionItems": len(tasks),
-                    "summary": f"Meeting summary for {meeting.get('title', 'meeting')}"
+                    "date": date_text,
+                    "time": time_text,
+                    "duration": duration_text,
+                    "attendees": max(1, attendees_count),  # At least 1 attendee
+                    "actionItems": action_items_count,
+                    "summary": summary
                 })
+            
+            avg_duration = total_duration_minutes // max(1, len(formatted_meetings))
             
             stats = {
                 "totalMeetings": len(formatted_meetings),
                 "completed": len(formatted_meetings),
-                "actionItems": sum(m["actionItems"] for m in formatted_meetings),
-                "avgDuration": 35
+                "actionItems": total_action_items,
+                "avgDuration": avg_duration
             }
             
             return {"status": "success", "data": {"meetings": formatted_meetings, "stats": stats}}

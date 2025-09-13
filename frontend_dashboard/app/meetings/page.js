@@ -30,10 +30,7 @@ const MeetingsPage = () => {
       actionItems: 3,
       summary: 'Team reported steady progress on the dashboard module. Grace flagged a blocker with the API response formatting. Paul will help troubleshoot after lunch. John is on leave today.',
       overview: 'The October GameUp Africa MeetUp featured talks from Unity Technologies. Ollie Nicholson discussed accelerating Unity development with tools like Pro Builder, Polybrush, and AI-driven features such as Muse Texture and Sprite generation. He emphasized the importance of optimizing assets and leveraging the Asset Store for productivity. Valentin Simonov introduced Unity 6, highlighting its new generational release model and features like GPU-resident drawers for improved performance. He also discussed the transition to a more stable and frequent update cycle, with additive features in update releases. Both speakers encouraged developers to explore these tools and resources for enhanced game development.',
-      actionItemsList: [
-        { id: 1, text: 'Investigate the Unity Render Pipeline options', completed: false },
-        { id: 2, text: 'Explore Unity Pro features and productivity tools.', completed: false }
-      ],
+      actionItemsList: [],
       transcript: [
         { speaker: 'Charlie', time: '0:00', text: 'Hey Lisa, I got your email with a meeting summary from Otter and I was curious about how it works. Have you been using it a lot for your meetings?', avatar: 'C' },
         { speaker: 'Lisa', time: '0:00', text: 'Yeah, I started using Otter a few months ago. And it saved me a lot of time from taking manual notes. It also helps me find answers from previous meetings and even write follow up emails.', avatar: 'L' },
@@ -56,10 +53,7 @@ const MeetingsPage = () => {
       actionItems: 3,
       summary: 'Team reported steady progress on the dashboard module. Grace flagged a blocker with the API response formatting. Paul will help troubleshoot after lunch. John is on leave today.',
       overview: 'Daily standup meeting to discuss progress and blockers.',
-      actionItemsList: [
-        { id: 1, text: 'Fix API response formatting issue', completed: false },
-        { id: 2, text: 'Review dashboard module progress', completed: true }
-      ],
+      actionItemsList: [],
       transcript: [
         { speaker: 'Grace', time: '0:00', text: 'I am blocked on the API response formatting. The data structure changed and our parsing logic needs updating.', avatar: 'G' },
         { speaker: 'Paul', time: '0:15', text: 'I can help you with that after lunch. Let me know what specific fields are causing issues.', avatar: 'P' }
@@ -79,10 +73,7 @@ const MeetingsPage = () => {
       actionItems: 3,
       summary: 'Team reported steady progress on the dashboard module. Grace flagged a blocker with the API response formatting. Paul will help troubleshoot after lunch. John is on leave today.',
       overview: 'Daily standup meeting to discuss progress and blockers.',
-      actionItemsList: [
-        { id: 1, text: 'Complete user authentication module', completed: false },
-        { id: 2, text: 'Test new features on staging', completed: false }
-      ],
+      actionItemsList: [],
       transcript: [
         { speaker: 'John', time: '0:00', text: 'Working on the authentication module today. Should be ready for testing by end of week.', avatar: 'J' },
         { speaker: 'Sarah', time: '0:10', text: 'Great! I can help with testing once its ready.', avatar: 'S' }
@@ -137,30 +128,46 @@ const MeetingsPage = () => {
     router.push(`/meetings/${meeting.id}`);
     setSelectedMeeting(meeting);
     
-    // Load real transcript data
     try {
-      const response = await apiService.getMeetingDetail(meeting.id);
-      if (response.data) {
-        const transcriptData = response.data;
-        const formattedTranscript = transcriptData.transcript_chunks?.map((chunk, index) => ({
-          speaker: chunk.speaker || `Speaker ${index + 1}`,
-          time: chunk.timestamp || '0:00',
-          text: chunk.text || '',
-          avatar: chunk.speaker ? chunk.speaker.charAt(0).toUpperCase() : 'S'
-        })) || [];
-        
-        setSelectedMeeting({
-          ...meeting,
-          transcript: formattedTranscript,
-          overview: transcriptData.transcript || meeting.summary,
-          actionItemsList: meeting.actionItemsList || [],
-          chatQuestions: meeting.chatQuestions || []
-        });
-        setLiveTranscript([]);
+      const transcriptResponse = await apiService.getMeetingDetail(meeting.id);
+      const transcriptData = transcriptResponse.data || {};
+      
+      const formattedTranscript = transcriptData.transcript_chunks?.map((chunk, index) => ({
+        speaker: chunk.speaker || `Speaker ${index + 1}`,
+        time: chunk.timestamp || '0:00',
+        text: chunk.text || '',
+        avatar: chunk.speaker ? chunk.speaker.charAt(0).toUpperCase() : 'S'
+      })) || [];
+      
+      // Load tasks separately
+      let formattedTasks = [];
+      try {
+        const tasksResponse = await apiService.getTasks(meeting.id);
+        console.log('Raw tasks response:', tasksResponse);
+        const tasksData = tasksResponse.data || [];
+        console.log('Tasks data:', tasksData);
+        formattedTasks = tasksData.map(task => ({
+          id: task.id,
+          text: task.title,
+          completed: task.status === 'completed',
+          assignee: task.assignee,
+          priority: task.priority
+        }));
+        console.log('Formatted tasks:', formattedTasks);
+      } catch (taskErr) {
+        console.error('Failed to load tasks:', taskErr);
       }
+      
+      setSelectedMeeting({
+        ...meeting,
+        transcript: formattedTranscript,
+        overview: transcriptData.transcript || meeting.summary,
+        actionItemsList: formattedTasks,
+        chatQuestions: meeting.chatQuestions || []
+      });
+      setLiveTranscript([]);
     } catch (err) {
-      console.error('Failed to load meeting transcript:', err);
-      // Keep original meeting data if transcript load fails
+      console.error('Failed to load meeting data:', err);
     }
   };
 
@@ -292,32 +299,30 @@ const MeetingsPage = () => {
                     </button>
                   </h2>
                   <div className="space-y-3">
-                    {(selectedMeeting.actionItemsList || []).map((item) => (
-                      <div key={item.id} className="flex items-center gap-3">
-                        <button
-                          onClick={() => toggleActionItem(item.id)}
-                          className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-                            item.completed
-                              ? 'bg-blue-600 border-blue-600 text-white'
-                              : 'border-gray-300 hover:border-gray-400'
-                          }`}
-                        >
-                          {item.completed && '✓'}
-                        </button>
-                        <span className={`${item.completed ? 'line-through text-gray-500' : 'text-gray-700'}`}>
-                          {item.text}
-                        </span>
-                      </div>
-                    ))}
-                    <button
-                      onClick={() => {
-                        const text = prompt('Enter new action item:');
-                        if (text) addActionItem(text);
-                      }}
-                      className="flex items-center gap-2 text-blue-600 hover:text-blue-700 mt-4"
-                    >
-                      + Add action item
-                    </button>
+                    {(selectedMeeting.actionItemsList || []).length > 0 ? (
+                      selectedMeeting.actionItemsList.map((item) => (
+                        <div key={item.id} className="flex items-center gap-3">
+                          <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                              item.completed
+                                ? 'bg-blue-600 border-blue-600 text-white'
+                                : 'border-gray-300'
+                            }`}>
+                            {item.completed && '✓'}
+                          </div>
+                          <div className="flex-1">
+                            <span className={`${item.completed ? 'line-through text-gray-500' : 'text-gray-700'}`}>
+                              {item.text}
+                            </span>
+                            {item.assignee && (
+                              <span className="text-sm text-gray-500 ml-2">• {item.assignee}</span>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-gray-500 text-sm">No action items found for this meeting.</p>
+                    )}
+
                   </div>
                 </div>
 

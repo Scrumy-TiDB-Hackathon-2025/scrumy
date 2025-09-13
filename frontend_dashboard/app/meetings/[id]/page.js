@@ -117,7 +117,7 @@ const MeetingDetailPage = () => {
         
         setSelectedMeeting(meetingWithDefaults);
         
-        // Load detailed transcript data
+        // Load detailed transcript and tasks data
         try {
           const response = await apiService.getMeetingDetail(meetingId);
           if (response.data) {
@@ -137,7 +137,26 @@ const MeetingDetailPage = () => {
           }
         } catch (transcriptErr) {
           console.error('Failed to load meeting transcript:', transcriptErr);
-          // Keep basic meeting data if transcript load fails
+        }
+        
+        // Load tasks for this meeting
+        try {
+          const tasksResponse = await apiService.getTasks(meetingId);
+          const tasksData = tasksResponse.data || [];
+          const formattedTasks = tasksData.map(task => ({
+            id: task.id,
+            text: task.title,
+            completed: task.status === 'completed',
+            assignee: task.assignee,
+            priority: task.priority
+          }));
+          
+          setSelectedMeeting(prev => ({
+            ...prev,
+            actionItemsList: formattedTasks
+          }));
+        } catch (taskErr) {
+          console.error('Failed to load tasks:', taskErr);
         }
         
         setError('');
@@ -352,32 +371,29 @@ const MeetingDetailPage = () => {
                   </button>
                 </h2>
                 <div className="space-y-3">
-                  {(selectedMeeting.actionItemsList || []).map((item) => (
-                    <div key={item.id} className="flex items-center gap-3">
-                      <button
-                        onClick={() => toggleActionItem(item.id)}
-                        className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                  {(selectedMeeting.actionItemsList || []).length > 0 ? (
+                    selectedMeeting.actionItemsList.map((item) => (
+                      <div key={item.id} className="flex items-center gap-3">
+                        <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
                           item.completed
                             ? 'bg-blue-600 border-blue-600 text-white'
-                            : 'border-gray-300 hover:border-gray-400'
-                        }`}
-                      >
-                        {item.completed && '✓'}
-                      </button>
-                      <span className={`${item.completed ? 'line-through text-gray-500' : 'text-gray-700'}`}>
-                        {item.text}
-                      </span>
-                    </div>
-                  ))}
-                  <button
-                    onClick={() => {
-                      const text = prompt('Enter new action item:');
-                      if (text) addActionItem(text);
-                    }}
-                    className="flex items-center gap-2 text-blue-600 hover:text-blue-700 mt-4"
-                  >
-                    + Add action item
-                  </button>
+                            : 'border-gray-300'
+                        }`}>
+                          {item.completed && '✓'}
+                        </div>
+                        <div className="flex-1">
+                          <span className={`${item.completed ? 'line-through text-gray-500' : 'text-gray-700'}`}>
+                            {item.text}
+                          </span>
+                          {item.assignee && (
+                            <span className="text-sm text-gray-500 ml-2">• {item.assignee}</span>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-gray-500 text-sm">No action items found for this meeting.</p>
+                  )}
                 </div>
               </div>
 
