@@ -699,32 +699,14 @@ function handleHelperMessage(messageType, data, sender) {
   }
 }
 
-function createMeeting() {
-  const meetingData = {
-    meeting_title: `${currentPlatform} Meeting - ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,
-    transcripts: [
-      {
-        id: meetingId,
-        text: `Meeting started on ${currentPlatform} at ${new Date().toISOString()}`,
-        timestamp: new Date().toISOString(),
-      },
-    ],
-  };
-
-  apiCall(ENDPOINTS.saveTranscript, {
-    method: "POST",
-    body: JSON.stringify(meetingData),
-  })
-    .then((response) => response.json())
-    .then((data) => {
-      console.log("✅ Meeting created:", data);
-    })
-    .catch((error) => {
-      console.error("❌ Failed to create meeting:", error);
-    });
-}
-
 function createEnhancedMeeting(participants) {
+  console.log("🚀 [DEBUG] createEnhancedMeeting called with:", {
+    participants: participants,
+    participantCount: participants.length,
+    meetingId: meetingId,
+    currentPlatform: currentPlatform
+  });
+
   const meetingData = {
     meeting_title: `${currentPlatform} Meeting - ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,
     meeting_id: meetingId,
@@ -739,26 +721,19 @@ function createEnhancedMeeting(participants) {
     ],
   };
 
-  apiCall(ENDPOINTS.saveTranscript, {
-    method: "POST",
-    body: JSON.stringify(meetingData),
-  })
-    .then((response) => response.json())
-    .then((data) => {
-      console.log("✅ Enhanced meeting created:", data);
-      console.log(
-        "👥 Participants:",
-        participants.map((p) => p.name).join(", "),
-      );
-    })
-    .catch((error) => {
-      console.error("❌ Failed to create enhanced meeting:", error);
-    });
+  console.log("📤 [DEBUG] Meeting data prepared (not sent to backend):", meetingData);
 }
 
 function sendAudioData(transcriptText) {
+  console.log("🚀 [DEBUG] sendAudioData called with:", {
+    transcriptText: transcriptText,
+    meetingId: meetingId,
+    currentPlatform: currentPlatform
+  });
+
   const transcriptData = {
     meeting_title: `${currentPlatform} Meeting - ${meetingId}`,
+    meeting_id: meetingId, // Add meeting_id to prevent duplicates
     transcripts: [
       {
         id: `${meetingId}-${Date.now()}`,
@@ -768,17 +743,7 @@ function sendAudioData(transcriptText) {
     ],
   };
 
-  apiCall(ENDPOINTS.saveTranscript, {
-    method: "POST",
-    body: JSON.stringify(transcriptData),
-  })
-    .then((response) => response.json())
-    .then((data) => {
-      console.log("✅ Transcript sent:", data);
-    })
-    .catch((error) => {
-      console.error("❌ Failed to send transcript:", error);
-    });
+  console.log("📤 [DEBUG] Transcript data prepared (not sent to backend):", transcriptData);
 }
 
 function openDashboard() {

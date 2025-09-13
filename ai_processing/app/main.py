@@ -307,6 +307,9 @@ class DeleteMeetingRequest(BaseModel):
 class SaveTranscriptRequest(BaseModel):
     meeting_title: str
     transcripts: List[Transcript]
+    meeting_id: Optional[str] = None
+    platform: Optional[str] = None
+    participants: Optional[List[Dict]] = None
 
 class SaveModelConfigRequest(BaseModel):
     provider: str
@@ -627,11 +630,21 @@ async def get_summary(meeting_id: str):
 async def save_transcript(request: SaveTranscriptRequest):
     """Save transcript segments for a meeting without processing"""
     try:
-        logger.info(f"Received save-transcript request for meeting: {request.meeting_title}")
-        logger.info(f"Number of transcripts to save: {len(request.transcripts)}")
-
-        # Generate a unique meeting ID using UUID
-        meeting_id = f"meeting-{uuid.uuid4()}"
+        logger.info(f"🚀 [DEBUG] save-transcript called with:")
+        logger.info(f"  - meeting_title: {request.meeting_title}")
+        logger.info(f"  - transcripts count: {len(request.transcripts)}")
+        logger.info(f"  - provided meeting_id: {getattr(request, 'meeting_id', 'NOT PROVIDED')}")
+        logger.info(f"  - platform: {getattr(request, 'platform', 'NOT PROVIDED')}")
+        logger.info(f"  - participants: {getattr(request, 'participants', 'NOT PROVIDED')}")
+        
+        # Use provided meeting_id if available, otherwise generate new UUID
+        provided_meeting_id = getattr(request, 'meeting_id', None)
+        meeting_id = provided_meeting_id or f"meeting-{uuid.uuid4()}"
+        
+        logger.info(f"📝 [DEBUG] Final meeting_id decision:")
+        logger.info(f"  - provided_meeting_id: {provided_meeting_id}")
+        logger.info(f"  - final meeting_id: {meeting_id}")
+        logger.info(f"  - was_generated: {provided_meeting_id is None}")
 
         # Save the meeting
         await db.save_meeting(meeting_id, request.meeting_title)
@@ -647,7 +660,7 @@ async def save_transcript(request: SaveTranscriptRequest):
                 key_points=""
             )
 
-        logger.info("Transcripts saved successfully")
+        logger.info(f"✅ [DEBUG] Transcripts saved successfully with meeting_id: {meeting_id}")
         return {"status": "success", "message": "Transcript saved successfully", "meeting_id": meeting_id}
     except Exception as e:
         logger.error(f"Error saving transcript: {str(e)}", exc_info=True)
