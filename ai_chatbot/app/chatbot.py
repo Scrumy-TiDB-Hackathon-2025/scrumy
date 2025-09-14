@@ -22,7 +22,7 @@ class ChatBot:
         
         # Initialize sentence transformer for embeddings
         self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-        self.similarity_threshold = 0.7
+        self.similarity_threshold = 0.4  # Lowered from 0.7 for better meeting data retrieval
         
     async def process_message(self, 
                             message: str, 
@@ -48,7 +48,7 @@ class ChatBot:
             query_embedding = self.embedding_model.encode(message).tolist()
             
             # Get relevant context from vector store
-            similar_docs = await self.vector_store.similarity_search(query_embedding, top_k=3)
+            similar_docs = await self.vector_store.similarity_search(query_embedding, top_k=5)
             
             # Get chat history for conversation context
             history = self.vector_store.get_chat_history(session_id, limit=5)
@@ -123,10 +123,19 @@ class ChatBot:
             return ""
         
         context_parts = []
-        for doc in relevant_docs[:3]:
+        for doc in relevant_docs[:5]:  # Increased from 3 to 5
             metadata = doc.get('metadata', {})
-            if metadata.get('type') == 'meeting_transcript':
-                context_parts.append(f"Meeting Context ({metadata.get('timestamp', 'Unknown date')}):\n"
+            doc_type = metadata.get('type', 'general')
+            
+            if doc_type == 'meeting_summary':
+                meeting_id = metadata.get('meeting_id', 'Unknown')
+                context_parts.append(f"Meeting {meeting_id}: {doc['text']}")
+            elif doc_type == 'task':
+                assignee = metadata.get('assignee', 'Unassigned')
+                meeting_id = metadata.get('meeting_id', 'Unknown')
+                context_parts.append(f"Task from meeting {meeting_id}: {doc['text']} (Assigned to: {assignee})")
+            elif doc_type == 'meeting_transcript':
+                context_parts.append(f"Meeting Transcript ({metadata.get('timestamp', 'Unknown date')}):\n"
                                    f"Summary: {metadata.get('summary', 'Not available')}\n"
                                    f"Content: {doc['text']}")
             else:
@@ -151,24 +160,30 @@ class ChatBot:
             relevant_docs = [doc for doc in similar_docs if doc.get('similarity', 0) > self.similarity_threshold]
             knowledge_context = self._format_knowledge_context(relevant_docs)
             
-            system_prompt = """You are Scrumy, an AI-powered project management assistant. 
+            system_prompt = """You are Scrumy, an AI-powered project management assistant with access to meeting data, tasks, and project information.
 Format your responses as follows:
 
 **Analysis of Available Data**
 
-[Provide a clear, concise analysis of the relevant information from the knowledge base]
+[Provide a clear, concise analysis of the relevant information from meetings, tasks, and knowledge base]
 
 **Key Points**
 - [List key points extracted from the data]
-- [Include only information that directly answers the user's question]
+- [Include meeting details, task assignments, and project context when relevant]
 
 **Additional Context**
-[If applicable, provide relevant project management context]
+[If applicable, provide relevant project management context, meeting references, or task details]
+
+When you have meeting or task data, be specific about:
+- Meeting IDs and dates
+- Task assignments and status
+- Participant information
+- Action items and deadlines
 
 If the data doesn't contain information relevant to the question, clearly state:
 "I don't have enough information in the available data to answer this question accurately."
 
-Be concise and professional. Never mention source numbers or irrelevant information."""
+Be concise and professional. Focus on actionable project management insights."""
 
             messages = [
                 {"role": "system", "content": system_prompt},
