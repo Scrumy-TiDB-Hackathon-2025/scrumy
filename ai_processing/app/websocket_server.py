@@ -281,6 +281,7 @@ class MeetingSession:
         self.transcript_chunks: List[Dict] = []
         self.cumulative_transcript = ""
         self._ai_processing_completed = False  # Prevent duplicate AI processing
+        self.last_disconnect_time: Optional[datetime] = None  # Track when last connection disconnected
 
         # Initialize buffer system immediately (no AI dependency)
         self.buffer = MeetingBuffer(meeting_id)
@@ -420,6 +421,7 @@ class WebSocketManager:
         self.processing_locks: Dict[str, threading.Lock] = {}  # Prevent race conditions
         self.websocket_to_session: Dict[WebSocket, str] = {}  # Track websocket to session mapping
         self.saved_transcript_hashes: Set[str] = set()  # Track saved transcript hashes to prevent duplicates
+        self.cleanup_tasks: Dict[str, asyncio.Task] = {}  # Track cleanup tasks for sessions
         
         # Initialize database using same factory as main app for TiDB compatibility
         self.db = self._init_database()
@@ -441,6 +443,10 @@ class WebSocketManager:
     def _init_database(self):
         """Initialize database using same configuration as main app"""
         try:
+            # Load environment variables first
+            from dotenv import load_dotenv
+            load_dotenv()
+            
             # Use environment-based database configuration (same as main.py)
             db = DatabaseFactory.create_from_env()
             
@@ -640,6 +646,7 @@ class WebSocketManager:
         if websocket in self.active_connections:
             connection_info = self.active_connections[websocket]
             session_id = self.websocket_to_session.get(websocket)
+            meeting_session = connection_info.get('meeting_session')
 
             logger.info(f"WebSocket disconnected: {connection_info.get('client_info', {})}")
 
@@ -652,7 +659,169 @@ class WebSocketManager:
                 if websocket in self.websocket_to_session:
                     del self.websocket_to_session[websocket]
 
+            # Mark session for potential cleanup but don't remove immediately
+            if meeting_session:
+                meeting_id = meeting_session.meeting_id
+                # Check if any other active connections are using this meeting session
+                other_connections_using_session = any(
+                    conn_info.get('meeting_session') and 
+                    conn_info['meeting_session'].meeting_id == meeting_id
+                    for ws, conn_info in self.active_connections.items() 
+                    if ws != websocket
+                )
+                
+                if not other_connections_using_session:
+                    # Mark session as disconnected but keep it alive for 5 minutes
+                    meeting_session.last_disconnect_time = datetime.now()
+                    logger.info(f"Marked meeting session for cleanup in 5 minutes: {meeting_id}")
+                    
+                    # Schedule cleanup task
+                    if meeting_id not in self.cleanup_tasks:
+                        cleanup_task = asyncio.create_task(self._schedule_session_cleanup(meeting_id))
+                        self.cleanup_tasks[meeting_id] = cleanup_task
+
             del self.active_connections[websocket]
+    
+    async def _schedule_session_cleanup(self, meeting_id: str):
+        """Schedule session cleanup after 5 minute timeout"""
+        try:
+            # Wait 5 minutes
+            await asyncio.sleep(300)  # 5 minutes
+            
+            # Check if session still exists and has no active connections
+            if meeting_id in self.meeting_sessions:
+                session = self.meeting_sessions[meeting_id]
+                
+                # Check if any connections have reconnected
+                has_active_connections = any(
+                    conn_info.get('meeting_session') and 
+                    conn_info['meeting_session'].meeting_id == meeting_id
+                    for conn_info in self.active_connections.values()
+                )
+                
+                if not has_active_connections and session.last_disconnect_time:
+                    # No reconnection happened, proceed with cleanup and pipeline
+                    logger.info(f"Cleaning up session after timeout: {meeting_id}")
+                    
+                    # Trigger final processing pipeline
+                    await self._finalize_session(session)
+                    
+                    # Clean up session and buffers
+                    del self.meeting_sessions[meeting_id]
+                    self.audio_buffer_manager.remove_buffer(meeting_id)
+                    
+                    logger.info(f"Session cleanup completed: {meeting_id}")
+                else:
+                    logger.info(f"Session reconnected, canceling cleanup: {meeting_id}")
+            
+            # Remove cleanup task
+            if meeting_id in self.cleanup_tasks:
+                del self.cleanup_tasks[meeting_id]
+                
+        except asyncio.CancelledError:
+            logger.info(f"Cleanup task cancelled for session: {meeting_id}")
+        except Exception as e:
+            logger.error(f"Error in session cleanup: {e}")
+    
+    async def _finalize_session(self, session: MeetingSession):
+        """Finalize session by running the processing pipeline"""
+        try:
+            logger.info(f"Finalizing session: {session.meeting_id}")
+            
+            # Process any remaining buffered audio
+            audio_buffer = self.audio_buffer_manager.get_buffer(session.meeting_id)
+            if len(audio_buffer.buffer) > 0:
+                logger.info(f"Processing final buffered audio for {session.meeting_id}")
+                wav_path = audio_buffer.create_wav_file()
+                if wav_path:
+                    try:
+                        final_result = await self.audio_processor.process_audio_chunk(
+                            audio_buffer.get_buffered_audio(), {}
+                        )
+                        if final_result.get('text'):
+                            session.add_transcript_chunk(final_result)
+                            
+                            # Save final transcript to database
+                            final_text = final_result['text'].strip()
+                            if self.db and final_text:
+                                await self.db.save_meeting_transcript(
+                                    meeting_id=session.meeting_id,
+                                    transcript=final_text,
+                                    timestamp=final_result.get('timestamp', datetime.now().isoformat())
+                                )
+                        os.unlink(wav_path)
+                    except Exception as e:
+                        logger.error(f"Error processing final audio: {e}")
+                        if os.path.exists(wav_path):
+                            os.unlink(wav_path)
+            
+            # Generate meeting summary if we have transcript content
+            if session.cumulative_transcript.strip():
+                await self._generate_meeting_summary_standalone(session)
+            
+        except Exception as e:
+            logger.error(f"Error finalizing session {session.meeting_id}: {e}")
+    
+    async def _generate_meeting_summary_standalone(self, session: MeetingSession):
+        """Generate meeting summary without WebSocket connection"""
+        try:
+            logger.info(f"Generating summary for disconnected session: {session.meeting_id}")
+            
+            # Save full transcript to database
+            if self.db and session.cumulative_transcript.strip():
+                await self.db.save_meeting_transcript(
+                    meeting_id=session.meeting_id,
+                    transcript=session.cumulative_transcript,
+                    timestamp=datetime.now().isoformat()
+                )
+            
+            # Skip AI processing if already completed
+            if session._ai_processing_completed:
+                return
+            
+            # Generate AI summary and tasks
+            try:
+                summary = await session.meeting_summarizer.generate_comprehensive_summary(
+                    session.cumulative_transcript,
+                    {
+                        'meeting_id': session.meeting_id,
+                        'platform': session.platform,
+                        'participants': list(session.participants)
+                    }
+                )
+                
+                tasks = await session.task_extractor.extract_comprehensive_tasks(
+                    session.cumulative_transcript,
+                    {'participants': list(session.participants)}
+                )
+                
+                # Save tasks to database
+                if self.db and tasks.get('tasks'):
+                    for task in tasks['tasks']:
+                        task_id = f"task-{uuid.uuid4()}"
+                        await self.db.save_task(
+                            task_id=task_id,
+                            meeting_id=session.meeting_id,
+                            title=task.get('title', 'Untitled Task'),
+                            description=task.get('description', ''),
+                            assignee=task.get('assignee', 'Unassigned'),
+                            priority=task.get('priority', 'medium'),
+                            status='pending'
+                        )
+                
+                # Populate vector store
+                await self._populate_vector_store(session.meeting_id, summary, tasks)
+                
+                # Mark as completed
+                session._ai_processing_completed = True
+                
+                logger.info(f"Summary generation completed for {session.meeting_id}")
+                
+            except Exception as ai_error:
+                logger.warning(f"AI processing failed for {session.meeting_id}: {ai_error}")
+                
+        except Exception as e:
+            logger.error(f"Error generating summary for {session.meeting_id}: {e}")
 
     async def send_message(self, websocket: WebSocket, message: Dict):
         """Send message to WebSocket client"""
@@ -741,6 +910,14 @@ class WebSocketManager:
             if participants and message_type == 'AUDIO_CHUNK_ENHANCED':
                 session.update_participants(participants, participant_count)
                 logger.debug(f"Updated participant data: {len(participants)} participants")
+            
+            # Clear disconnect time and cancel cleanup if reconnected
+            if hasattr(session, 'last_disconnect_time') and session.last_disconnect_time:
+                session.last_disconnect_time = None
+                if meeting_id in self.cleanup_tasks:
+                    self.cleanup_tasks[meeting_id].cancel()
+                    del self.cleanup_tasks[meeting_id]
+                    logger.info(f"Cancelled cleanup task for reconnected session: {meeting_id}")
 
             self.active_connections[websocket]['meeting_session'] = session
 
@@ -1505,79 +1682,79 @@ async def websocket_endpoint(websocket: WebSocket):
 
     except WebSocketDisconnect:
         print(f"🔌 WebSocket disconnected normally")
-        websocket_manager.disconnect(websocket)
+        await websocket_manager.disconnect(websocket)
     except Exception as e:
         print(f"❌ WebSocket error: {e}")
-        websocket_manager.disconnect(websocket)
+        await websocket_manager.disconnect(websocket)
         raise
 
 def get_websocket_manager():
     """Get the global WebSocket manager instance"""
     return websocket_manager
 
+# Create FastAPI app instance for uvicorn
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+import os
+from dotenv import load_dotenv
+
+# Load environment
+env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
+if os.path.exists(env_path):
+    load_dotenv(env_path)
+    print("✅ Loaded environment from .env")
+else:
+    print("⚠️  No .env file found")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    print("🗄️ Ensuring database is ready...")
+    await websocket_manager._ensure_database_ready()
+    print("🚀 Starting background timeout checker...")
+    await background_manager.start(websocket_manager.audio_buffer_manager, websocket_manager)
+    yield
+    # Shutdown
+    print("🛑 Stopping background timeout checker...")
+    await background_manager.stop()
+
+# Create FastAPI app with lifespan
+app = FastAPI(title="ScrumBot WebSocket Server", lifespan=lifespan)
+
+# Add CORS middleware with WebSocket support
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"]
+)
+
+# Add root endpoint for testing
+@app.get("/")
+async def root():
+    return {"message": "ScrumBot WebSocket Server with Auto-Restart", "websocket": "/ws"}
+
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "auto_restart": "enabled"}
+
+# WebSocket endpoint with full message handling
+@app.websocket("/ws")
+async def websocket_route(websocket: WebSocket):
+    print(f"🔌 WebSocket connection attempt from {websocket.client}")
+    await websocket_endpoint(websocket)
+
 async def start_server(host="0.0.0.0", port=8080):
-    """Start the WebSocket server with FastAPI/Uvicorn and lifespan management"""
+    """Legacy start server function for backward compatibility"""
     import uvicorn
-    from fastapi import FastAPI
-    from fastapi.middleware.cors import CORSMiddleware
-    from contextlib import asynccontextmanager
-
-    # Load environment
-    import os
-    from dotenv import load_dotenv
-
-    # Load .env file
-    env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
-    if os.path.exists(env_path):
-        load_dotenv(env_path)
-        print("✅ Loaded environment from .env")
-    else:
-        print("⚠️  No .env file found")
-
-    @asynccontextmanager
-    async def lifespan(app: FastAPI):
-        # Startup
-        print("🗄️ Ensuring database is ready...")
-        await websocket_manager._ensure_database_ready()
-        print("🚀 Starting background timeout checker...")
-        await background_manager.start(websocket_manager.audio_buffer_manager, websocket_manager)
-        yield
-        # Shutdown
-        print("🛑 Stopping background timeout checker...")
-        await background_manager.stop()
-
+    
     print("🚀 Starting ScrumBot WebSocket Server...")
     print(f"📡 WebSocket endpoint: ws://{host}:{port}/ws")
     print(f"🏥 Health check: http://{host}:{port}/health")
-
-    # Create FastAPI app with lifespan
-    app = FastAPI(title="ScrumBot WebSocket Server", lifespan=lifespan)
-
-    # Add CORS middleware with WebSocket support
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-        expose_headers=["*"]
-    )
-
-    # Add root endpoint for testing
-    @app.get("/")
-    async def root():
-        return {"message": "ScrumBot WebSocket Server", "websocket": "/ws"}
-
-    # Health check endpoint
-    @app.get("/health")
-    async def health_check():
-        return {"status": "healthy"}
-
-    # WebSocket endpoint with full message handling
-    @app.websocket("/ws")
-    async def websocket_route(websocket: WebSocket):
-        print(f"🔌 WebSocket connection attempt from {websocket.client}")
-        await websocket_endpoint(websocket)
 
     # Start server
     config = uvicorn.Config(

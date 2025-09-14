@@ -32,6 +32,9 @@ class ChatBot:
         if not session_id:
             session_id = str(uuid.uuid4())
 
+        # Initialize variables
+        similar_docs = []
+        
         # Check if we need to call other endpoints
         if self._requires_meeting_processing(message):
             try:
@@ -73,8 +76,8 @@ class ChatBot:
 
     def _requires_meeting_processing(self, message: str) -> bool:
         """Check if message requires calling meeting processing endpoints"""
-        keywords = ['meeting', 'transcript', 'summary', 'recording']
-        return any(keyword in message.lower() for keyword in keywords)
+        # Disable meeting endpoint calls - use vector store instead
+        return False
 
     async def _call_meeting_endpoint(self, message: str) -> Dict:
         """Call appropriate meeting processing endpoint"""

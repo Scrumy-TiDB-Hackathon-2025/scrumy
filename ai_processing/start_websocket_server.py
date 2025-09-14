@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """
-WebSocket server starter script for PM2
-Starts the WebSocket server for Chrome extension
+WebSocket server starter script with auto-restart
+Starts the WebSocket server for Chrome extension with file watching
 """
 
-import asyncio
+import uvicorn
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-from app.websocket_server import start_server
 
 # Set working directory to ai_processing
 os.chdir(Path(__file__).parent)
@@ -26,11 +25,13 @@ else:
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
-    print(f"Starting WebSocket server on port {port}")
-    try:
-        asyncio.run(start_server(port=port))
-    except KeyboardInterrupt:
-        print("\n🛑 Server stopped by user")
-    except Exception as e:
-        print(f"❌ Server error: {e}")
-        raise
+    print(f"🚀 Starting WebSocket server on port {port} with auto-restart")
+    
+    uvicorn.run(
+        "app.websocket_server:app",
+        host="0.0.0.0",
+        port=port,
+        reload=True,
+        reload_dirs=["./app"],
+        log_level="info"
+    )
