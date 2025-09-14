@@ -43,7 +43,7 @@ export default function Dashboard() {
         }
 
         // Clear error if meetings fetch succeeded
-        if (error.includes('Health check failed')) {
+        if (error) {
           setError('');
         }
       } catch (err) {
@@ -60,7 +60,7 @@ export default function Dashboard() {
     // Refresh every 30 seconds
     const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
-  }, [error]);
+  }, []);
 
   return (
     <div className="flex h-full bg-gray-50">
@@ -150,8 +150,10 @@ export default function Dashboard() {
       </div>
 
       {/* Chat Sidebar - Fixed position */}
-      <div className="w-80 bg-white border-l border-gray-200 flex-shrink-0">
-        <ChatSection />
+      <div className="w-80 bg-white border-l border-gray-200 flex-shrink-0 h-full">
+        <div className="h-full p-4">
+          <ChatSection />
+        </div>
       </div>
     </div>
   );

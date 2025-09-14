@@ -27,12 +27,22 @@ logger = logging.getLogger(__name__)
 class TiDBDatabase(DatabaseInterface):
     """TiDB implementation of DatabaseInterface for hackathon production deployment"""
 
-    def __init__(self, host: str, port: int = 4000, user: str = None,
+    def __init__(self, host: str = None, port: int = 4000, user: str = None,
                  password: str = None, database: str = "scrumy_ai",
-                 ssl_mode: str = "REQUIRED", **kwargs):
+                 ssl_mode: str = "REQUIRED", connection_string: str = None, **kwargs):
 
         if not MYSQL_AVAILABLE:
             raise ImportError("mysql-connector-python is required for TiDB. Install with: pip install mysql-connector-python")
+
+        # Parse connection string if provided
+        if connection_string:
+            import re
+            match = re.match(r'mysql://([^:]+):([^@]+)@([^:]+):([^/]+)/(.+)', connection_string)
+            if match:
+                user, password, host, port, database = match.groups()
+                port = int(port)
+            else:
+                raise ValueError(f"Invalid connection string format: {connection_string}")
 
         self.connection_params = {
             'host': host,
@@ -85,9 +95,9 @@ class TiDBDatabase(DatabaseInterface):
                     meeting_id VARCHAR(255) NOT NULL,
                     transcript TEXT NOT NULL,
                     timestamp VARCHAR(255) NOT NULL,
-                    summary TEXT DEFAULT '',
-                    action_items TEXT DEFAULT '',
-                    key_points TEXT DEFAULT '',
+                    summary TEXT,
+                    action_items TEXT,
+                    key_points TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (meeting_id) REFERENCES meetings(id) ON DELETE CASCADE,
                     INDEX idx_meeting_timestamp (meeting_id, timestamp)

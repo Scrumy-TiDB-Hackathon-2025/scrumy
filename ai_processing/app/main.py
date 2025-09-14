@@ -7,7 +7,7 @@ import uvicorn
 from typing import Optional, List, Dict, Any
 import logging
 from dotenv import load_dotenv
-from app.db import DatabaseManager
+from app.database_interface import DatabaseFactory
 from app.database_interface import DatabaseFactory, validate_database_config
 import json
 from threading import Lock

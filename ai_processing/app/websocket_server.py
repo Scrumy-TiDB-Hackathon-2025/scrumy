@@ -1146,6 +1146,61 @@ class WebSocketManager:
                 })
             print(f"✅ Meeting end processing completed!")
 
+    async def _populate_vector_store(self, meeting_id: str, summary: dict, tasks: dict):
+        """Add meeting data to vector store for AI chatbot context"""
+        try:
+            import httpx
+            import os
+            
+            # Get chatbot URL from environment (configurable for deployment)
+            chatbot_url = os.getenv('CHATBOT_URL', 'http://127.0.0.1:8001')
+            knowledge_endpoint = f"{chatbot_url}/knowledge/add"
+            
+            # Skip if chatbot URL is disabled
+            if chatbot_url.lower() in ['none', 'disabled', '']:
+                print(f"⚠️ Chatbot integration disabled - skipping vector store population")
+                return
+            
+            # Add meeting summary to knowledge base
+            summary_text = summary.get('summary', '')
+            if summary_text:
+                summary_content = f"Meeting {meeting_id}: {summary_text}"
+                async with httpx.AsyncClient() as client:
+                    await client.post(
+                        knowledge_endpoint,
+                        json={
+                            "content": summary_content,
+                            "metadata": {
+                                "type": "meeting_summary",
+                                "meeting_id": meeting_id,
+                                "category": "meeting"
+                            }
+                        },
+                        timeout=10.0
+                    )
+            
+            # Add tasks to knowledge base
+            for task in tasks.get('tasks', []):
+                task_content = f"Task from meeting {meeting_id}: {task.get('title', '')} - {task.get('description', '')} (Assigned to: {task.get('assignee', 'Unassigned')})"
+                async with httpx.AsyncClient() as client:
+                    await client.post(
+                        knowledge_endpoint,
+                        json={
+                            "content": task_content,
+                            "metadata": {
+                                "type": "task",
+                                "meeting_id": meeting_id,
+                                "category": "task",
+                                "assignee": task.get('assignee', '')
+                            }
+                        },
+                        timeout=10.0
+                    )
+            
+            print(f"✅ Added meeting {meeting_id} data to vector store at {chatbot_url}")
+        except Exception as e:
+            print(f"❌ Failed to populate vector store: {e}")
+    
     async def _generate_meeting_summary(self, websocket: WebSocket, session: MeetingSession):
         """Generate and send meeting summary (only if AI is available)"""
         try:
@@ -1225,6 +1280,9 @@ class WebSocketManager:
                             status='pending'
                         )
                     print(f"💾 Saved {len(tasks['tasks'])} tasks to database")
+                    
+                    # Add meeting data to vector store for AI chatbot
+                    await self._populate_vector_store(session.meeting_id, summary, tasks)
 
                 print(f"🎉 AI processing completed successfully!")
                 logger.info(f"AI processing completed for meeting {session.meeting_id}")

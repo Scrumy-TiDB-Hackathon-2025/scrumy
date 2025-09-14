@@ -14,18 +14,23 @@ import os
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Initialize database using the same factory as main.py
-try:
-    from app.database_interface import DatabaseFactory
-    
-    # Use environment-based database configuration (same as main.py)
-    db = DatabaseFactory.create_from_env()
-    
-    db_type = os.getenv('DATABASE_TYPE', 'sqlite').lower()
-    logger.info(f"Frontend endpoints using {db_type.upper()} database")
-except Exception as e:
-    logger.warning(f"Database not available, using mock data: {e}")
-    db = None
+# Use singleton database connection to avoid multiple TiDB connections
+_db_instance = None
+
+def get_db():
+    global _db_instance
+    if _db_instance is None:
+        try:
+            from app.database_interface import DatabaseFactory
+            _db_instance = DatabaseFactory.create_from_env()
+            db_type = os.getenv('DATABASE_TYPE', 'sqlite').lower()
+            logger.info(f"Frontend endpoints using {db_type.upper()} database (singleton)")
+        except Exception as e:
+            logger.warning(f"Database not available, using mock data: {e}")
+            _db_instance = None
+    return _db_instance
+
+db = get_db()
 
 @router.get("/api/tasks")
 async def get_tasks(meeting_id: Optional[str] = None):

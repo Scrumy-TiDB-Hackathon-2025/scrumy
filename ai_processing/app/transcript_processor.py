@@ -3,7 +3,6 @@ from typing import List, Tuple, Literal, Optional, Dict
 import logging
 import os
 from dotenv import load_dotenv
-from app.db import DatabaseManager
 from app.database_interface import DatabaseFactory
 import asyncio
 import json
