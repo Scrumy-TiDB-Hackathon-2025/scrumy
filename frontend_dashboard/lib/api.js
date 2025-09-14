@@ -93,5 +93,31 @@ export const apiService = {
   getIntegrations: () => api.get(config.endpoints.integrations),
   
   // Projects
-  getProjects: () => api.get(config.endpoints.projects)
+  getProjects: () => api.get(config.endpoints.projects),
+  
+  // Recording status
+  getRecordingStatus: (meetingId) => {
+    if (meetingId) {
+      return api.get(`/recording-status?meeting_id=${meetingId}`);
+    }
+    return api.get('/recording-status');
+  },
+  
+  // Chatbot integration
+  chatWithBot: (message, sessionId = null, context = null) => {
+    return fetch('http://127.0.0.1:8001/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, session_id: sessionId, context })
+    }).then(res => res.json());
+  },
+  
+  getChatbotHealth: () => {
+    return fetch('http://127.0.0.1:8001/health').then(res => res.json());
+  },
+  
+  searchKnowledge: (query, topK = 5) => {
+    return fetch(`http://127.0.0.1:8001/knowledge/search?query=${encodeURIComponent(query)}&top_k=${topK}`)
+      .then(res => res.json());
+  }
 };

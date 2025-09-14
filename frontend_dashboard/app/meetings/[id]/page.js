@@ -41,6 +41,18 @@ const MeetingDetailPage = () => {
     
     setRefreshing(true);
     try {
+      // Check if meeting is still being recorded
+      const recordingStatus = await apiService.getRecordingStatus(meetingId);
+      const isRecording = recordingStatus.is_recording;
+      
+      // Update meeting active status based on recording status
+      setMeetingActive(isRecording);
+      
+      // If not recording, stop auto-refresh
+      if (!isRecording) {
+        setAutoRefresh(false);
+      }
+      
       const response = await apiService.getMeetingDetail(meetingId);
       if (response.data) {
         const transcriptData = response.data;
@@ -57,17 +69,6 @@ const MeetingDetailPage = () => {
         
         if (newTranscriptLength > currentTranscriptLength) {
           setLastTranscriptUpdate(new Date());
-          setMeetingActive(true);
-        } else {
-          // Check if meeting has been inactive for more than 2 minutes
-          const now = new Date();
-          const lastUpdate = lastTranscriptUpdate || now;
-          const inactiveTime = (now - lastUpdate) / 1000 / 60; // minutes
-          
-          if (inactiveTime > 2) {
-            setMeetingActive(false);
-            setAutoRefresh(false); // Stop auto-refresh
-          }
         }
         
         setSelectedMeeting(prev => ({
@@ -82,7 +83,7 @@ const MeetingDetailPage = () => {
     } finally {
       setRefreshing(false);
     }
-  }, [meetingId, selectedMeeting, lastTranscriptUpdate]);
+  }, [meetingId, selectedMeeting]);
 
   // Auto-refresh effect for both tabs
   useEffect(() => {

@@ -21,6 +21,8 @@ def get_db():
     global _db_instance
     if _db_instance is None:
         try:
+            from dotenv import load_dotenv
+            load_dotenv()  # Load environment variables
             from app.database_interface import DatabaseFactory
             _db_instance = DatabaseFactory.create_from_env()
             db_type = os.getenv('DATABASE_TYPE', 'sqlite').lower()

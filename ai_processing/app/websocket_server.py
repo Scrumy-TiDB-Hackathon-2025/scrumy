@@ -29,6 +29,7 @@ from app.pipeline_logger import PipelineLogger
 from app.background_tasks import background_manager
 from app.session_manager import session_manager
 from app.database_interface import DatabaseFactory
+from app.chatbot_sync import chatbot_sync
 import subprocess
 import time
 import uuid
@@ -910,6 +911,11 @@ class WebSocketManager:
             if participants and message_type == 'AUDIO_CHUNK_ENHANCED':
                 session.update_participants(participants, participant_count)
                 logger.debug(f"Updated participant data: {len(participants)} participants")
+                
+                # Sync participants to chatbot (non-blocking)
+                participant_names = [p.get('name', 'Unknown') for p in participants if p.get('name')]
+                if participant_names:
+                    asyncio.create_task(chatbot_sync.add_meeting_participants(meeting_id, participant_names))
             
             # Clear disconnect time and cancel cleanup if reconnected
             if hasattr(session, 'last_disconnect_time') and session.last_disconnect_time:
@@ -1046,6 +1052,12 @@ class WebSocketManager:
                         )
                         self.saved_transcript_hashes.add(transcript_hash)
                         print(f"✅ Successfully saved transcript chunk to database")
+                        
+                        # Sync to chatbot for real-time context (non-blocking)
+                        asyncio.create_task(chatbot_sync.add_live_transcript_chunk(
+                            meeting_id, transcript_text, speaker_name
+                        ))
+                        
                     except Exception as db_error:
                         print(f"❌ Failed to save transcript chunk: {db_error}")
                         logger.error(f"Failed to save transcript chunk: {db_error}")
@@ -1338,10 +1350,20 @@ class WebSocketManager:
                 print(f"⚠️ Chatbot integration disabled - skipping vector store population")
                 return
             
-            # Add meeting summary to knowledge base
+            # Add comprehensive meeting data to knowledge base
+            
+            # 1. Meeting summary with full context
             summary_text = summary.get('summary', '')
             if summary_text:
-                summary_content = f"Meeting {meeting_id}: {summary_text}"
+                # Enhanced meeting summary with participants and platform
+                participants_list = ', '.join(session.participants) if hasattr(session, 'participants') else 'Unknown'
+                meeting_date = datetime.now().strftime('%Y-%m-%d %H:%M')
+                
+                summary_content = f"""Meeting {meeting_id} ({session.platform if hasattr(session, 'platform') else 'Unknown'}) on {meeting_date}:
+Participants: {participants_list}
+Summary: {summary_text}
+Key Points: {', '.join(summary.get('key_points', []))}"""
+                
                 async with httpx.AsyncClient() as client:
                     await client.post(
                         knowledge_endpoint,
@@ -1350,15 +1372,42 @@ class WebSocketManager:
                             "metadata": {
                                 "type": "meeting_summary",
                                 "meeting_id": meeting_id,
-                                "category": "meeting"
+                                "category": "meeting",
+                                "platform": getattr(session, 'platform', 'unknown'),
+                                "date": meeting_date,
+                                "participants": list(getattr(session, 'participants', []))
                             }
                         },
                         timeout=10.0
                     )
             
-            # Add tasks to knowledge base
-            for task in tasks.get('tasks', []):
-                task_content = f"Task from meeting {meeting_id}: {task.get('title', '')} - {task.get('description', '')} (Assigned to: {task.get('assignee', 'Unassigned')})"
+            # 2. Add full transcript for searchability
+            if hasattr(session, 'cumulative_transcript') and session.cumulative_transcript.strip():
+                transcript_content = f"Full transcript from meeting {meeting_id}: {session.cumulative_transcript[:1000]}..."
+                async with httpx.AsyncClient() as client:
+                    await client.post(
+                        knowledge_endpoint,
+                        json={
+                            "content": transcript_content,
+                            "metadata": {
+                                "type": "meeting_transcript",
+                                "meeting_id": meeting_id,
+                                "category": "transcript"
+                            }
+                        },
+                        timeout=10.0
+                    )
+            
+            # 3. Add tasks with enhanced context
+            for i, task in enumerate(tasks.get('tasks', [])):
+                task_content = f"""Task #{i+1} from meeting {meeting_id}:
+Title: {task.get('title', 'Untitled')}
+Description: {task.get('description', 'No description')}
+Assigned to: {task.get('assignee', 'Unassigned')}
+Priority: {task.get('priority', 'medium')}
+Status: {task.get('status', 'pending')}
+Meeting Context: {summary.get('summary', '')[:200]}..."""
+                
                 async with httpx.AsyncClient() as client:
                     await client.post(
                         knowledge_endpoint,
@@ -1368,7 +1417,10 @@ class WebSocketManager:
                                 "type": "task",
                                 "meeting_id": meeting_id,
                                 "category": "task",
-                                "assignee": task.get('assignee', '')
+                                "assignee": task.get('assignee', ''),
+                                "priority": task.get('priority', 'medium'),
+                                "status": task.get('status', 'pending'),
+                                "task_index": i + 1
                             }
                         },
                         timeout=10.0

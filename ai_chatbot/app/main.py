@@ -147,6 +147,44 @@ async def get_key_stats():
     """Get usage statistics for API keys"""
     return {"keys": key_manager.get_key_stats()}
 
+@app.get("/meetings/verify")
+async def verify_meeting_access():
+    """Verify chatbot can access meeting data from TiDB"""
+    try:
+        with tidb_conn.get_engine().connect() as conn:
+            # Check if meetings table exists and get count
+            result = conn.execute(text("SELECT COUNT(*) as count FROM meetings"))
+            meeting_count = result.fetchone()[0]
+            
+            # Get recent meetings
+            result = conn.execute(text("SELECT id, title, created_at FROM meetings ORDER BY created_at DESC LIMIT 5"))
+            recent_meetings = [dict(row._mapping) for row in result.fetchall()]
+            
+            # Check if tasks table exists and get count
+            result = conn.execute(text("SELECT COUNT(*) as count FROM tasks"))
+            task_count = result.fetchone()[0]
+            
+            return {
+                "status": "success",
+                "data_access": {
+                    "meetings_count": meeting_count,
+                    "tasks_count": task_count,
+                    "recent_meetings": recent_meetings,
+                    "database_shared": True
+                }
+            }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "data_access": {
+                "meetings_count": 0,
+                "tasks_count": 0,
+                "recent_meetings": [],
+                "database_shared": False
+            }
+        }
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=8001)

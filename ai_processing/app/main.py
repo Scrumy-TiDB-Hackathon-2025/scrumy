@@ -94,6 +94,99 @@ except Exception as e:
 async def health_check():
     return {"status": "healthy"}
 
+@app.get("/debug/database")
+async def debug_database():
+    """Debug endpoint to check which database is being used"""
+    try:
+        from app.database_interface import get_database_status
+        import os
+        
+        # Get database instance info
+        db_type = type(db).__name__
+        db_status = get_database_status()
+        
+        # Test database connection
+        health = await db.health_check()
+        
+        return {
+            "database_class": db_type,
+            "environment_config": db_status,
+            "connection_healthy": health,
+            "sqlite_file_exists": os.path.exists("meeting_minutes.db"),
+            "env_database_type": os.getenv("DATABASE_TYPE", "not_set"),
+            "tidb_connection_string": bool(os.getenv("TIDB_CONNECTION_STRING"))
+        }
+    except Exception as e:
+        return {
+            "error": str(e),
+            "database_class": type(db).__name__ if 'db' in globals() else "unknown"
+        }
+
+@app.get("/recording-status")
+async def get_recording_status(meeting_id: Optional[str] = None):
+    """Get current recording status for frontend auto-refresh control
+    
+    Args:
+        meeting_id: Optional meeting ID to check for specific meeting recording status
+    """
+    try:
+        from app.websocket_server import get_websocket_manager
+        
+        websocket_manager = get_websocket_manager()
+        active_sessions = len(websocket_manager.meeting_sessions)
+        active_connections = len(websocket_manager.active_connections)
+        
+        # Check if any sessions are active (created in last 10 minutes)
+        from datetime import datetime, timedelta
+        now = datetime.now()
+        recent_sessions = []
+        
+        for session_id, session in websocket_manager.meeting_sessions.items():
+            time_diff = now - session.start_time
+            
+            # Session is active if:
+            # 1. Started within 10 minutes, OR
+            # 2. Disconnected but within 5-minute grace period
+            is_active = time_diff < timedelta(minutes=10)
+            if hasattr(session, 'last_disconnect_time') and session.last_disconnect_time:
+                disconnect_diff = now - session.last_disconnect_time
+                is_active = disconnect_diff < timedelta(minutes=5)
+            
+            if is_active:
+                status = "disconnected" if hasattr(session, 'last_disconnect_time') and session.last_disconnect_time else "active"
+                recent_sessions.append({
+                    "meeting_id": session_id,
+                    "platform": session.platform,
+                    "duration_minutes": int(time_diff.total_seconds() / 60),
+                    "participants": len(session.participants),
+                    "status": status
+                })
+        
+        # If specific meeting_id provided, only return true if that meeting is being recorded
+        if meeting_id:
+            is_recording = any(session["meeting_id"] == meeting_id for session in recent_sessions)
+        else:
+            # Global recording status - any active sessions
+            is_recording = len(recent_sessions) > 0
+        
+        return {
+            "is_recording": is_recording,
+            "active_sessions": len(recent_sessions),
+            "active_connections": active_connections,
+            "recent_sessions": recent_sessions,
+            "checked_meeting_id": meeting_id
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting recording status: {e}")
+        return {
+            "is_recording": False,
+            "active_sessions": 0,
+            "active_connections": 0,
+            "recent_sessions": [],
+            "checked_meeting_id": meeting_id
+        }
+
 def preprocess_audio_for_whisper(input_path: str, output_path: str) -> bool:
     """
     Convert audio to the format expected by whisper.cpp:
