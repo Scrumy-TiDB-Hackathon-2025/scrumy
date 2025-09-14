@@ -563,6 +563,11 @@ class WebSocketManager:
                         )
                         self.saved_transcript_hashes.add(transcript_hash)
                         print(f"✅ Successfully saved timeout transcript to database")
+                        
+                        # ALWAYS add timeout transcript to vector store
+                        asyncio.create_task(self._add_transcript_to_vector_store(
+                            session_id, transcript_text, getattr(session, 'platform', 'unknown'), list(getattr(session, 'participants', []))
+                        ))
                     except Exception as db_error:
                         print(f"❌ Failed to save timeout transcript: {db_error}")
                         logger.error(f"Failed to save timeout transcript: {db_error}")
@@ -749,6 +754,11 @@ class WebSocketManager:
                                     meeting_id=session.meeting_id,
                                     transcript=final_text,
                                     timestamp=final_result.get('timestamp', datetime.now().isoformat())
+                                )
+                                
+                                # ALWAYS add final transcript to vector store
+                                await self._add_transcript_to_vector_store(
+                                    session.meeting_id, final_text, session.platform, list(session.participants)
                                 )
                         os.unlink(wav_path)
                     except Exception as e:
@@ -1054,8 +1064,14 @@ class WebSocketManager:
                         print(f"✅ Successfully saved transcript chunk to database")
                         
                         # Sync to chatbot for real-time context (non-blocking)
+                        speaker_name = participants[0].get('name', 'Unknown') if participants else 'Unknown'
                         asyncio.create_task(chatbot_sync.add_live_transcript_chunk(
                             meeting_id, transcript_text, speaker_name
+                        ))
+                        
+                        # ALWAYS add transcript to vector store immediately (not just after AI processing)
+                        asyncio.create_task(self._add_transcript_to_vector_store(
+                            session.meeting_id, transcript_text, session.platform, list(session.participants)
                         ))
                         
                     except Exception as db_error:
@@ -1266,6 +1282,11 @@ class WebSocketManager:
                                             timestamp=final_result.get('timestamp', datetime.now().isoformat())
                                         )
                                         print(f"✅ Successfully saved final transcript to database")
+                                        
+                                        # ALWAYS add final transcript to vector store
+                                        asyncio.create_task(self._add_transcript_to_vector_store(
+                                            session.meeting_id, final_text, session.platform, list(session.participants)
+                                        ))
                                     except Exception as db_error:
                                         print(f"❌ Failed to save final transcript: {db_error}")
                                         logger.error(f"Failed to save final transcript: {db_error}")
@@ -1335,6 +1356,48 @@ class WebSocketManager:
                 })
             print(f"✅ Meeting end processing completed!")
 
+    async def _add_transcript_to_vector_store(self, meeting_id: str, transcript_text: str, platform: str = "unknown", participants: List[str] = None):
+        """Immediately add transcript to vector store (called for every transcript chunk)"""
+        try:
+            import httpx
+            import os
+            
+            # Get chatbot URL from environment
+            chatbot_url = os.getenv('CHATBOT_URL', 'http://127.0.0.1:8001')
+            knowledge_endpoint = f"{chatbot_url}/knowledge/add"
+            
+            # Skip if chatbot URL is disabled or transcript too short
+            if chatbot_url.lower() in ['none', 'disabled', ''] or len(transcript_text.strip()) < 10:
+                return
+            
+            # Create enhanced transcript content with context
+            participants_str = ', '.join(participants) if participants else 'Unknown'
+            meeting_date = datetime.now().strftime('%Y-%m-%d %H:%M')
+            
+            content = f"Meeting {meeting_id} transcript ({platform}) on {meeting_date} with participants {participants_str}: {transcript_text}"
+            
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                await client.post(
+                    knowledge_endpoint,
+                    json={
+                        "content": content,
+                        "metadata": {
+                            "type": "meeting_transcript",
+                            "meeting_id": meeting_id,
+                            "category": "transcript",
+                            "platform": platform,
+                            "date": meeting_date,
+                            "participants": participants or []
+                        }
+                    }
+                )
+            
+            print(f"✅ Added transcript chunk to vector store: '{transcript_text[:50]}...'")
+            
+        except Exception as e:
+            # Non-critical - don't break the main flow
+            logger.debug(f"Failed to add transcript to vector store: {e}")
+    
     async def _populate_vector_store(self, meeting_id: str, summary: dict, tasks: dict):
         """Add meeting data to vector store for AI chatbot context"""
         try:
@@ -1381,18 +1444,18 @@ Key Points: {', '.join(summary.get('key_points', []))}"""
                         timeout=10.0
                     )
             
-            # 2. Add full transcript for searchability
+            # 2. Add full meeting summary transcript (comprehensive version)
             if hasattr(session, 'cumulative_transcript') and session.cumulative_transcript.strip():
-                transcript_content = f"Full transcript from meeting {meeting_id}: {session.cumulative_transcript[:1000]}..."
+                transcript_content = f"Complete meeting summary for {meeting_id}: {session.cumulative_transcript}"
                 async with httpx.AsyncClient() as client:
                     await client.post(
                         knowledge_endpoint,
                         json={
                             "content": transcript_content,
                             "metadata": {
-                                "type": "meeting_transcript",
+                                "type": "meeting_summary_transcript",
                                 "meeting_id": meeting_id,
-                                "category": "transcript"
+                                "category": "summary"
                             }
                         },
                         timeout=10.0
