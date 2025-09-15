@@ -16,6 +16,6 @@ if __name__ == "__main__":
         "app.main:app",
         host="0.0.0.0",
         port=int(os.getenv("PORT", 5167)),
-        reload=False,
+        reload=True,  # Enable auto-restart on file changes
         log_level="info"
     )

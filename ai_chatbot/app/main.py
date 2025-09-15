@@ -46,10 +46,20 @@ chatbot = ChatBot(vector_store, model_name="llama-3.3-70b-versatile", key_manage
 # Initialize knowledge base on startup
 @app.on_event("startup")
 async def startup_event():
-    """Initialize the knowledge base with sample data"""
+    """Initialize the knowledge base with sample data and meeting data"""
     try:
         await vector_store.bootstrap_knowledge_base()
         print("✅ Knowledge base initialized successfully")
+        
+        # Also populate meeting data into vector store
+        try:
+            result = await populate_meeting_data_to_vector_store()
+            if result["status"] == "success":
+                print(f"✅ Meeting data populated: {result['details']['total_items']} items")
+            else:
+                print(f"⚠️  Warning: Could not populate meeting data: {result.get('error', 'Unknown error')}")
+        except Exception as e:
+            print(f"⚠️  Warning: Could not populate meeting data: {e}")
     except Exception as e:
         print(f"⚠️  Warning: Could not initialize knowledge base: {e}")
 
@@ -57,6 +67,9 @@ class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
     context: Optional[Dict] = None
+
+class MeetingDataRequest(BaseModel):
+    force_refresh: Optional[bool] = False
 
 class ChatResponse(BaseModel):
     session_id: str
@@ -183,6 +196,189 @@ async def verify_meeting_access():
                 "recent_meetings": [],
                 "database_shared": False
             }
+        }
+
+@app.get("/meetings/comprehensive")
+async def get_comprehensive_meeting_data():
+    """Get comprehensive meeting data for chatbot queries"""
+    try:
+        with tidb_conn.get_engine().connect() as conn:
+            # Get all meetings with details
+            meetings_result = conn.execute(text("""
+                SELECT m.id, m.title, m.created_at, m.updated_at,
+                       COUNT(DISTINCT t.id) as task_count,
+                       GROUP_CONCAT(DISTINCT t.title SEPARATOR '; ') as task_titles
+                FROM meetings m
+                LEFT JOIN tasks t ON m.id = t.meeting_id
+                GROUP BY m.id, m.title, m.created_at, m.updated_at
+                ORDER BY m.created_at DESC
+            """))
+            
+            meetings = []
+            for row in meetings_result:
+                # Extract platform from meeting ID or title
+                platform = "unknown"
+                if "meet.google.com" in row.id:
+                    platform = "Google Meet"
+                elif "zoom.us" in row.id:
+                    platform = "Zoom"
+                elif "teams.microsoft.com" in row.id:
+                    platform = "Microsoft Teams"
+                
+                meeting_data = {
+                    "id": row.id,
+                    "title": row.title,
+                    "platform": platform,
+                    "created_at": str(row.created_at),
+                    "updated_at": str(row.updated_at),
+                    "task_count": row.task_count or 0,
+                    "task_titles": row.task_titles or "No tasks"
+                }
+                meetings.append(meeting_data)
+            
+            # Get all tasks with meeting context
+            tasks_result = conn.execute(text("""
+                SELECT t.id, t.meeting_id, t.title, t.description, t.assignee, 
+                       t.due_date, t.priority, t.status, t.created_at,
+                       m.title as meeting_title
+                FROM tasks t
+                LEFT JOIN meetings m ON t.meeting_id = m.id
+                ORDER BY t.created_at DESC
+            """))
+            
+            tasks = []
+            for row in tasks_result:
+                # Extract platform from meeting ID
+                meeting_platform = "unknown"
+                if row.meeting_id and "meet.google.com" in row.meeting_id:
+                    meeting_platform = "Google Meet"
+                elif row.meeting_id and "zoom.us" in row.meeting_id:
+                    meeting_platform = "Zoom"
+                elif row.meeting_id and "teams.microsoft.com" in row.meeting_id:
+                    meeting_platform = "Microsoft Teams"
+                
+                task_data = {
+                    "id": row.id,
+                    "meeting_id": row.meeting_id,
+                    "title": row.title,
+                    "description": row.description,
+                    "assignee": row.assignee,
+                    "due_date": str(row.due_date) if row.due_date else None,
+                    "priority": row.priority,
+                    "status": row.status,
+                    "created_at": str(row.created_at),
+                    "meeting_title": row.meeting_title,
+                    "meeting_platform": meeting_platform
+                }
+                tasks.append(task_data)
+            
+            # Get transcripts if available
+            try:
+                transcripts_result = conn.execute(text("""
+                    SELECT meeting_id, transcript, timestamp
+                    FROM transcripts
+                    ORDER BY timestamp DESC
+                    LIMIT 50
+                """))
+                transcripts = [dict(row._mapping) for row in transcripts_result]
+            except:
+                transcripts = []
+            
+            return {
+                "status": "success",
+                "data": {
+                    "meetings": meetings,
+                    "tasks": tasks,
+                    "transcripts": transcripts,
+                    "summary": {
+                        "total_meetings": len(meetings),
+                        "total_tasks": len(tasks),
+                        "total_transcripts": len(transcripts)
+                    }
+                }
+            }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "data": {
+                "meetings": [],
+                "tasks": [],
+                "transcripts": [],
+                "summary": {"total_meetings": 0, "total_tasks": 0, "total_transcripts": 0}
+            }
+        }
+
+@app.post("/meetings/populate-vector-store")
+async def populate_meeting_data_to_vector_store():
+    """Populate all meeting data into vector store for better chatbot access"""
+    try:
+        comprehensive_data = await get_comprehensive_meeting_data()
+        if comprehensive_data["status"] != "success":
+            raise Exception("Failed to get comprehensive meeting data")
+        
+        data = comprehensive_data["data"]
+        texts_to_add = []
+        embeddings_to_add = []
+        metadata_to_add = []
+        
+        # Add meeting summaries
+        for meeting in data["meetings"]:
+            meeting_text = f"""Meeting: {meeting['title']}
+ID: {meeting['id']}
+Platform: {meeting['platform']}
+Date: {meeting['created_at']}
+Tasks: {meeting['task_count']} tasks - {meeting['task_titles']}"""
+            
+            texts_to_add.append(meeting_text)
+            metadata_to_add.append({
+                "type": "meeting_summary",
+                "meeting_id": meeting['id'],
+                "platform": meeting['platform'],
+                "date": meeting['created_at'],
+                "task_count": meeting['task_count']
+            })
+        
+        # Add task details
+        for task in data["tasks"]:
+            task_text = f"""Task: {task['title']}
+Description: {task['description'] or 'No description'}
+Assignee: {task['assignee'] or 'Unassigned'}
+Priority: {task['priority']}
+Status: {task['status']}
+Meeting: {task['meeting_title']} ({task['meeting_id']})
+Due Date: {task['due_date'] or 'No due date'}"""
+            
+            texts_to_add.append(task_text)
+            metadata_to_add.append({
+                "type": "task",
+                "task_id": task['id'],
+                "meeting_id": task['meeting_id'],
+                "assignee": task['assignee'],
+                "priority": task['priority'],
+                "status": task['status']
+            })
+        
+        # Generate embeddings for all texts
+        if texts_to_add:
+            embeddings_to_add = chatbot.embedding_model.encode(texts_to_add).tolist()
+            
+            # Add to vector store
+            await vector_store.add_texts(texts_to_add, embeddings_to_add, metadata_to_add)
+        
+        return {
+            "status": "success",
+            "message": f"Added {len(texts_to_add)} items to vector store",
+            "details": {
+                "meetings_added": len(data["meetings"]),
+                "tasks_added": len(data["tasks"]),
+                "total_items": len(texts_to_add)
+            }
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e)
         }
 
 if __name__ == "__main__":

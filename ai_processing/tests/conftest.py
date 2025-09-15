@@ -3,7 +3,7 @@ import asyncio
 import json
 import os
 import datetime
-from app.db import DatabaseManager
+from app.database_interface import DatabaseFactory
 
 # Needed for async test support
 pytest_plugins = ("pytest_asyncio",)
@@ -20,10 +20,12 @@ def reset_db_state():
     """
     Automatically clear the DB before each test to prevent duplicate Meeting ID errors.
     """
-    db = DatabaseManager()
-    db.clear_all()  
+    db = DatabaseFactory.create_from_env()
+    if hasattr(db, 'clear_all'):
+        db.clear_all()  
     yield
-    db.clear_all() 
+    if hasattr(db, 'clear_all'):
+        db.clear_all() 
 
 # Global list to collect test results
 test_results = []

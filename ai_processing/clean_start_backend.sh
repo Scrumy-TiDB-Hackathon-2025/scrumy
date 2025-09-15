@@ -223,10 +223,23 @@ if ! pip show fastapi >/dev/null 2>&1; then
     handle_error "FastAPI not found. Please install dependencies first"
 fi
 
-# Start the backend with proper Python path and output redirection
-log_info "Redirecting backend output to backend.log..."
-PYTHONPATH=. python app/main.py > backend.log 2>&1 &
-PYTHON_PID=$!
+# Start the backend with auto-restart feature
+log_info "Starting backend with auto-restart on file changes..."
+if command -v watchdog >/dev/null 2>&1; then
+    log_info "Using watchdog for auto-restart"
+    PYTHONPATH=. watchdog --patterns="*.py" --recursive --auto-restart -- python app/main.py > backend.log 2>&1 &
+    PYTHON_PID=$!
+elif pip show watchdog >/dev/null 2>&1; then
+    log_info "Using watchdog for auto-restart"
+    PYTHONPATH=. python -m watchdog --patterns="*.py" --recursive --auto-restart -- python app/main.py > backend.log 2>&1 &
+    PYTHON_PID=$!
+else
+    log_warning "Watchdog not installed. Installing for auto-restart feature..."
+    pip install watchdog
+    log_info "Using watchdog for auto-restart"
+    PYTHONPATH=. python -m watchdog --patterns="*.py" --recursive --auto-restart -- python app/main.py > backend.log 2>&1 &
+    PYTHON_PID=$!
+fi
 
 # Wait for backend to start and check if it's running
 sleep 10
@@ -239,10 +252,11 @@ if ! lsof -i :$PORT | grep -q LISTEN; then
     handle_error "Python backend is not listening on port $PORT"
 fi
 
-log_success "🎉 Services started successfully!"
+log_success "🎉 Services started successfully with auto-restart!"
 
 echo -e "${GREEN}🐍 Python Backend (PID: $PYTHON_PID) - Port: 5167${NC}"
 echo -e "${BLUE}  📄 Backend logs: backend.log${NC}"
+echo -e "${BLUE}  🔄 Auto-restart: Enabled (watches *.py files)${NC}"
 
 if [ "$WHISPER_AVAILABLE" = true ]; then
     echo -e "${GREEN}🎙️ Whisper.cpp: Ready for transcription${NC}"

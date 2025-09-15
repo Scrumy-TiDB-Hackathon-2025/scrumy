@@ -1,27 +1,51 @@
 {
   "summary": {
-    "total": 2,
-    "passed": 2,
+    "total": 5,
+    "passed": 5,
     "failed": 0,
     "skipped": 0,
     "exit_status": 0,
-    "timestamp": "2025-09-11T14:40:49.031253"
+    "timestamp": "2025-09-14T16:18:31.952866"
   },
   "tests": [
     {
-      "test": "test_duplicate_audio_chunks_handled",
+      "test": "test_session_cleanup_scheduling",
       "outcome": "PASSED",
-      "nodeid": "tests/test_websocket_integration.py::TestWebSocketDuplicatePrevention::test_duplicate_audio_chunks_handled",
-      "time": "2025-09-11T14:40:49.024844",
-      "duration": 0.0027648750692605972,
+      "nodeid": "tests/test_session_cleanup_simple.py::test_session_cleanup_scheduling",
+      "time": "2025-09-14T16:18:31.925690",
+      "duration": 0.0020595421083271503,
       "longrepr": null
     },
     {
-      "test": "test_meeting_session_reuse",
+      "test": "test_recording_status_active",
       "outcome": "PASSED",
-      "nodeid": "tests/test_websocket_integration.py::TestWebSocketDuplicatePrevention::test_meeting_session_reuse",
-      "time": "2025-09-11T14:40:49.029661",
-      "duration": 0.001841292018070817,
+      "nodeid": "tests/test_session_cleanup_simple.py::test_recording_status_active",
+      "time": "2025-09-14T16:18:31.934804",
+      "duration": 0.0037403751630336046,
+      "longrepr": null
+    },
+    {
+      "test": "test_recording_status_disconnected_grace_period",
+      "outcome": "PASSED",
+      "nodeid": "tests/test_session_cleanup_simple.py::test_recording_status_disconnected_grace_period",
+      "time": "2025-09-14T16:18:31.941280",
+      "duration": 0.0009089589584618807,
+      "longrepr": null
+    },
+    {
+      "test": "test_recording_status_old_disconnected",
+      "outcome": "PASSED",
+      "nodeid": "tests/test_session_cleanup_simple.py::test_recording_status_old_disconnected",
+      "time": "2025-09-14T16:18:31.945697",
+      "duration": 0.0010701250284910202,
+      "longrepr": null
+    },
+    {
+      "test": "test_multiple_connections_no_cleanup",
+      "outcome": "PASSED",
+      "nodeid": "tests/test_session_cleanup_simple.py::test_multiple_connections_no_cleanup",
+      "time": "2025-09-14T16:18:31.949905",
+      "duration": 0.001215917058289051,
       "longrepr": null
     }
   ]
