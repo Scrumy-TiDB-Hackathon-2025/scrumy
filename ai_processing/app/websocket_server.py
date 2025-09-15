@@ -564,10 +564,7 @@ class WebSocketManager:
                         self.saved_transcript_hashes.add(transcript_hash)
                         print(f"✅ Successfully saved timeout transcript to database")
                         
-                        # ALWAYS add timeout transcript to vector store
-                        asyncio.create_task(self._add_transcript_to_vector_store(
-                            session_id, transcript_text, getattr(session, 'platform', 'unknown'), list(getattr(session, 'participants', []))
-                        ))
+                        # Note: Vector store population happens after meeting ends, not per chunk
                     except Exception as db_error:
                         print(f"❌ Failed to save timeout transcript: {db_error}")
                         logger.error(f"Failed to save timeout transcript: {db_error}")
@@ -756,10 +753,7 @@ class WebSocketManager:
                                     timestamp=final_result.get('timestamp', datetime.now().isoformat())
                                 )
                                 
-                                # ALWAYS add final transcript to vector store
-                                await self._add_transcript_to_vector_store(
-                                    session.meeting_id, final_text, session.platform, list(session.participants)
-                                )
+                                # Note: Vector store population happens after meeting ends, not per chunk
                         os.unlink(wav_path)
                     except Exception as e:
                         logger.error(f"Error processing final audio: {e}")
@@ -769,6 +763,18 @@ class WebSocketManager:
             # Generate meeting summary if we have transcript content
             if session.cumulative_transcript.strip():
                 await self._generate_meeting_summary_standalone(session)
+            else:
+                # Even without AI processing, ensure basic meeting data gets to vector store
+                try:
+                    basic_summary = {
+                        'summary': f"Meeting transcript with {len(session.transcript_chunks)} segments",
+                        'key_points': ['Transcript available for review'],
+                        'participants': list(session.participants)
+                    }
+                    await self._populate_vector_store(session.meeting_id, basic_summary, {'tasks': []})
+                    print(f"✅ Added basic meeting data to vector store")
+                except Exception as e:
+                    print(f"❌ Failed to add basic meeting data to vector store: {e}")
             
         except Exception as e:
             logger.error(f"Error finalizing session {session.meeting_id}: {e}")
@@ -788,6 +794,17 @@ class WebSocketManager:
             
             # Skip AI processing if already completed
             if session._ai_processing_completed:
+                # Still ensure vector store population even if AI was already done
+                try:
+                    basic_summary = {
+                        'summary': f"Meeting transcript with {len(session.transcript_chunks)} segments",
+                        'key_points': ['Transcript available for review'],
+                        'participants': list(session.participants)
+                    }
+                    await self._populate_vector_store(session.meeting_id, basic_summary, {'tasks': []})
+                    print(f"✅ Ensured meeting data in vector store (AI already completed)")
+                except Exception as e:
+                    print(f"❌ Failed to ensure meeting data in vector store: {e}")
                 return
             
             # Generate AI summary and tasks
@@ -820,8 +837,13 @@ class WebSocketManager:
                             status='pending'
                         )
                 
-                # Populate vector store
-                await self._populate_vector_store(session.meeting_id, summary, tasks)
+                # CRITICAL: ALWAYS populate vector store
+                try:
+                    await self._populate_vector_store(session.meeting_id, summary, tasks)
+                    print(f"✅ Meeting data added to vector store for chatbot access")
+                except Exception as vector_error:
+                    print(f"❌ Failed to populate vector store: {vector_error}")
+                    logger.error(f"Failed to populate vector store: {vector_error}")
                 
                 # Mark as completed
                 session._ai_processing_completed = True
@@ -1069,10 +1091,7 @@ class WebSocketManager:
                             meeting_id, transcript_text, speaker_name
                         ))
                         
-                        # ALWAYS add transcript to vector store immediately (not just after AI processing)
-                        asyncio.create_task(self._add_transcript_to_vector_store(
-                            session.meeting_id, transcript_text, session.platform, list(session.participants)
-                        ))
+                        # Note: Vector store population happens after meeting ends, not per chunk
                         
                     except Exception as db_error:
                         print(f"❌ Failed to save transcript chunk: {db_error}")
@@ -1283,10 +1302,7 @@ class WebSocketManager:
                                         )
                                         print(f"✅ Successfully saved final transcript to database")
                                         
-                                        # ALWAYS add final transcript to vector store
-                                        asyncio.create_task(self._add_transcript_to_vector_store(
-                                            session.meeting_id, final_text, session.platform, list(session.participants)
-                                        ))
+                                        # Note: Vector store population happens after meeting ends, not per chunk
                                     except Exception as db_error:
                                         print(f"❌ Failed to save final transcript: {db_error}")
                                         logger.error(f"Failed to save final transcript: {db_error}")
@@ -1356,142 +1372,40 @@ class WebSocketManager:
                 })
             print(f"✅ Meeting end processing completed!")
 
-    async def _add_transcript_to_vector_store(self, meeting_id: str, transcript_text: str, platform: str = "unknown", participants: List[str] = None):
-        """Immediately add transcript to vector store (called for every transcript chunk)"""
+
+    
+    async def _populate_vector_store(self, meeting_id: str, summary: dict, tasks: dict):
+        """Trigger bulk vector store population using the efficient /meetings/populate-vector-store endpoint"""
         try:
             import httpx
             import os
             
             # Get chatbot URL from environment
             chatbot_url = os.getenv('CHATBOT_URL', 'http://127.0.0.1:8001')
-            knowledge_endpoint = f"{chatbot_url}/knowledge/add"
-            
-            # Skip if chatbot URL is disabled or transcript too short
-            if chatbot_url.lower() in ['none', 'disabled', ''] or len(transcript_text.strip()) < 10:
-                return
-            
-            # Create enhanced transcript content with context
-            participants_str = ', '.join(participants) if participants else 'Unknown'
-            meeting_date = datetime.now().strftime('%Y-%m-%d %H:%M')
-            
-            content = f"Meeting {meeting_id} transcript ({platform}) on {meeting_date} with participants {participants_str}: {transcript_text}"
-            
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                await client.post(
-                    knowledge_endpoint,
-                    json={
-                        "content": content,
-                        "metadata": {
-                            "type": "meeting_transcript",
-                            "meeting_id": meeting_id,
-                            "category": "transcript",
-                            "platform": platform,
-                            "date": meeting_date,
-                            "participants": participants or []
-                        }
-                    }
-                )
-            
-            print(f"✅ Added transcript chunk to vector store: '{transcript_text[:50]}...'")
-            
-        except Exception as e:
-            # Non-critical - don't break the main flow
-            logger.debug(f"Failed to add transcript to vector store: {e}")
-    
-    async def _populate_vector_store(self, meeting_id: str, summary: dict, tasks: dict):
-        """Add meeting data to vector store for AI chatbot context"""
-        try:
-            import httpx
-            import os
-            
-            # Get chatbot URL from environment (configurable for deployment)
-            chatbot_url = os.getenv('CHATBOT_URL', 'http://127.0.0.1:8001')
-            knowledge_endpoint = f"{chatbot_url}/knowledge/add"
+            populate_endpoint = f"{chatbot_url}/meetings/populate-vector-store"
             
             # Skip if chatbot URL is disabled
             if chatbot_url.lower() in ['none', 'disabled', '']:
                 print(f"⚠️ Chatbot integration disabled - skipping vector store population")
                 return
             
-            # Add comprehensive meeting data to knowledge base
-            
-            # 1. Meeting summary with full context
-            summary_text = summary.get('summary', '')
-            if summary_text:
-                # Enhanced meeting summary with participants and platform
-                participants_list = ', '.join(session.participants) if hasattr(session, 'participants') else 'Unknown'
-                meeting_date = datetime.now().strftime('%Y-%m-%d %H:%M')
+            # Call the bulk population endpoint (more efficient than individual /knowledge/add calls)
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(populate_endpoint)
+                result = response.json()
                 
-                summary_content = f"""Meeting {meeting_id} ({session.platform if hasattr(session, 'platform') else 'Unknown'}) on {meeting_date}:
-Participants: {participants_list}
-Summary: {summary_text}
-Key Points: {', '.join(summary.get('key_points', []))}"""
-                
-                async with httpx.AsyncClient() as client:
-                    await client.post(
-                        knowledge_endpoint,
-                        json={
-                            "content": summary_content,
-                            "metadata": {
-                                "type": "meeting_summary",
-                                "meeting_id": meeting_id,
-                                "category": "meeting",
-                                "platform": getattr(session, 'platform', 'unknown'),
-                                "date": meeting_date,
-                                "participants": list(getattr(session, 'participants', []))
-                            }
-                        },
-                        timeout=10.0
-                    )
+                if result.get('status') == 'success':
+                    details = result.get('details', {})
+                    print(f"✅ Bulk populated vector store: {details.get('total_items', 0)} items")
+                    print(f"   - Meetings: {details.get('meetings_added', 0)}")
+                    print(f"   - Tasks: {details.get('tasks_added', 0)}")
+                    print(f"   - Transcripts: {details.get('transcripts_added', 0)}")
+                else:
+                    print(f"❌ Bulk population failed: {result.get('error', 'Unknown error')}")
             
-            # 2. Add full meeting summary transcript (comprehensive version)
-            if hasattr(session, 'cumulative_transcript') and session.cumulative_transcript.strip():
-                transcript_content = f"Complete meeting summary for {meeting_id}: {session.cumulative_transcript}"
-                async with httpx.AsyncClient() as client:
-                    await client.post(
-                        knowledge_endpoint,
-                        json={
-                            "content": transcript_content,
-                            "metadata": {
-                                "type": "meeting_summary_transcript",
-                                "meeting_id": meeting_id,
-                                "category": "summary"
-                            }
-                        },
-                        timeout=10.0
-                    )
-            
-            # 3. Add tasks with enhanced context
-            for i, task in enumerate(tasks.get('tasks', [])):
-                task_content = f"""Task #{i+1} from meeting {meeting_id}:
-Title: {task.get('title', 'Untitled')}
-Description: {task.get('description', 'No description')}
-Assigned to: {task.get('assignee', 'Unassigned')}
-Priority: {task.get('priority', 'medium')}
-Status: {task.get('status', 'pending')}
-Meeting Context: {summary.get('summary', '')[:200]}..."""
-                
-                async with httpx.AsyncClient() as client:
-                    await client.post(
-                        knowledge_endpoint,
-                        json={
-                            "content": task_content,
-                            "metadata": {
-                                "type": "task",
-                                "meeting_id": meeting_id,
-                                "category": "task",
-                                "assignee": task.get('assignee', ''),
-                                "priority": task.get('priority', 'medium'),
-                                "status": task.get('status', 'pending'),
-                                "task_index": i + 1
-                            }
-                        },
-                        timeout=10.0
-                    )
-            
-            print(f"✅ Added meeting {meeting_id} data to vector store at {chatbot_url}")
         except Exception as e:
-            print(f"❌ Failed to populate vector store: {e}")
+            print(f"❌ Failed to trigger bulk vector store population: {e}")
+            # Don't re-raise - this is not critical for meeting processing
     
     async def _generate_meeting_summary(self, websocket: WebSocket, session: MeetingSession):
         """Generate and send meeting summary (only if AI is available)"""
@@ -1572,9 +1486,6 @@ Meeting Context: {summary.get('summary', '')[:200]}..."""
                             status='pending'
                         )
                     print(f"💾 Saved {len(tasks['tasks'])} tasks to database")
-                    
-                    # Add meeting data to vector store for AI chatbot
-                    await self._populate_vector_store(session.meeting_id, summary, tasks)
 
                 print(f"🎉 AI processing completed successfully!")
                 logger.info(f"AI processing completed for meeting {session.meeting_id}")
@@ -1594,6 +1505,14 @@ Meeting Context: {summary.get('summary', '')[:200]}..."""
                 }
                 tasks = {'tasks': []}
                 print(f"✅ Basic summary created")
+            
+            # CRITICAL: ALWAYS populate vector store regardless of AI success/failure
+            try:
+                await self._populate_vector_store(session.meeting_id, summary, tasks)
+                print(f"✅ Meeting data added to vector store for chatbot access")
+            except Exception as vector_error:
+                print(f"❌ Failed to populate vector store: {vector_error}")
+                logger.error(f"Failed to populate vector store: {vector_error}")
 
             # Notify integration systems (only if tasks were extracted)
             task_count = len(tasks.get('tasks', []))

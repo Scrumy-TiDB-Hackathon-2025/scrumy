@@ -51,15 +51,18 @@ async def startup_event():
         await vector_store.bootstrap_knowledge_base()
         print("✅ Knowledge base initialized successfully")
         
-        # Also populate meeting data into vector store
+        # CRITICAL: Always populate meeting data into vector store on startup
         try:
             result = await populate_meeting_data_to_vector_store()
             if result["status"] == "success":
                 print(f"✅ Meeting data populated: {result['details']['total_items']} items")
+                print(f"✅ Chatbot now has access to all meeting data")
             else:
-                print(f"⚠️  Warning: Could not populate meeting data: {result.get('error', 'Unknown error')}")
+                print(f"❌ ERROR: Could not populate meeting data: {result.get('error', 'Unknown error')}")
+                print(f"❌ Chatbot will not have access to meeting data!")
         except Exception as e:
-            print(f"⚠️  Warning: Could not populate meeting data: {e}")
+            print(f"❌ CRITICAL ERROR: Could not populate meeting data: {e}")
+            print(f"❌ Chatbot will not have access to meeting data!")
     except Exception as e:
         print(f"⚠️  Warning: Could not initialize knowledge base: {e}")
 
@@ -272,16 +275,19 @@ async def get_comprehensive_meeting_data():
                 }
                 tasks.append(task_data)
             
-            # Get transcripts if available
+            # Get transcripts if available (CRITICAL for chatbot context)
             try:
                 transcripts_result = conn.execute(text("""
                     SELECT meeting_id, transcript, timestamp
                     FROM transcripts
+                    WHERE LENGTH(TRIM(transcript)) > 10
                     ORDER BY timestamp DESC
-                    LIMIT 50
+                    LIMIT 100
                 """))
                 transcripts = [dict(row._mapping) for row in transcripts_result]
-            except:
+                print(f"✅ Found {len(transcripts)} transcript segments for vector store")
+            except Exception as e:
+                print(f"⚠️ Could not load transcripts: {e}")
                 transcripts = []
             
             return {
@@ -311,7 +317,7 @@ async def get_comprehensive_meeting_data():
 
 @app.post("/meetings/populate-vector-store")
 async def populate_meeting_data_to_vector_store():
-    """Populate all meeting data into vector store for better chatbot access"""
+    """Populate all meeting data into vector store for better chatbot access - CRITICAL for hackathon demo"""
     try:
         comprehensive_data = await get_comprehensive_meeting_data()
         if comprehensive_data["status"] != "success":
@@ -322,13 +328,14 @@ async def populate_meeting_data_to_vector_store():
         embeddings_to_add = []
         metadata_to_add = []
         
-        # Add meeting summaries
+        # Add meeting summaries with enhanced context
         for meeting in data["meetings"]:
             meeting_text = f"""Meeting: {meeting['title']}
 ID: {meeting['id']}
 Platform: {meeting['platform']}
 Date: {meeting['created_at']}
-Tasks: {meeting['task_count']} tasks - {meeting['task_titles']}"""
+Tasks: {meeting['task_count']} tasks - {meeting['task_titles']}
+Meeting Summary: This meeting took place on {meeting['platform']} and generated {meeting['task_count']} action items."""
             
             texts_to_add.append(meeting_text)
             metadata_to_add.append({
@@ -339,7 +346,7 @@ Tasks: {meeting['task_count']} tasks - {meeting['task_titles']}"""
                 "task_count": meeting['task_count']
             })
         
-        # Add task details
+        # Add task details with meeting context
         for task in data["tasks"]:
             task_text = f"""Task: {task['title']}
 Description: {task['description'] or 'No description'}
@@ -347,7 +354,9 @@ Assignee: {task['assignee'] or 'Unassigned'}
 Priority: {task['priority']}
 Status: {task['status']}
 Meeting: {task['meeting_title']} ({task['meeting_id']})
-Due Date: {task['due_date'] or 'No due date'}"""
+Meeting Platform: {task['meeting_platform']}
+Due Date: {task['due_date'] or 'No due date'}
+Task Context: This task was created from meeting {task['meeting_id']} on {task['meeting_platform']}."""
             
             texts_to_add.append(task_text)
             metadata_to_add.append({
@@ -358,6 +367,22 @@ Due Date: {task['due_date'] or 'No due date'}"""
                 "priority": task['priority'],
                 "status": task['status']
             })
+        
+        # Add transcript data if available
+        for transcript in data["transcripts"]:
+            if transcript.get('transcript') and len(transcript['transcript'].strip()) > 20:
+                transcript_text = f"""Meeting Transcript from {transcript['meeting_id']}:
+Timestamp: {transcript['timestamp']}
+Content: {transcript['transcript']}
+Transcript Context: This is a transcript segment from meeting {transcript['meeting_id']}."""
+                
+                texts_to_add.append(transcript_text)
+                metadata_to_add.append({
+                    "type": "meeting_transcript",
+                    "meeting_id": transcript['meeting_id'],
+                    "timestamp": transcript['timestamp'],
+                    "category": "transcript"
+                })
         
         # Generate embeddings for all texts
         if texts_to_add:
@@ -372,6 +397,7 @@ Due Date: {task['due_date'] or 'No due date'}"""
             "details": {
                 "meetings_added": len(data["meetings"]),
                 "tasks_added": len(data["tasks"]),
+                "transcripts_added": len(data["transcripts"]),
                 "total_items": len(texts_to_add)
             }
         }
