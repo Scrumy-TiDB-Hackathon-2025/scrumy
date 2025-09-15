@@ -18,51 +18,18 @@ class ChatbotSync:
         self.knowledge_endpoint = f"{chatbot_url}/knowledge/add"
     
     async def add_live_transcript_chunk(self, meeting_id: str, transcript: str, speaker: str = "Unknown"):
-        """Add live transcript chunks for real-time context"""
-        try:
-            if not transcript.strip() or len(transcript) < 10:
-                return  # Skip short/empty transcripts
-                
-            content = f"Live transcript from meeting {meeting_id} - {speaker}: {transcript}"
-            
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                await client.post(
-                    self.knowledge_endpoint,
-                    json={
-                        "content": content,
-                        "metadata": {
-                            "type": "live_transcript",
-                            "meeting_id": meeting_id,
-                            "speaker": speaker,
-                            "category": "live"
-                        }
-                    }
-                )
-        except Exception as e:
-            logger.debug(f"Failed to sync live transcript: {e}")  # Non-critical
+        """Add live transcript chunks for real-time context - DISABLED to prevent infinite API calls"""
+        # DISABLED: Individual /knowledge/add calls during recording cause infinite loops
+        # Vector store is now populated efficiently via bulk /meetings/populate-vector-store after meeting ends
+        logger.debug(f"Live transcript sync disabled - using bulk population after meeting ends")
+        return
     
     async def add_meeting_participants(self, meeting_id: str, participants: List[str]):
-        """Add participant context for better responses"""
-        try:
-            if not participants:
-                return
-                
-            content = f"Meeting {meeting_id} participants: {', '.join(participants)}"
-            
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                await client.post(
-                    self.knowledge_endpoint,
-                    json={
-                        "content": content,
-                        "metadata": {
-                            "type": "participants",
-                            "meeting_id": meeting_id,
-                            "category": "meeting"
-                        }
-                    }
-                )
-        except Exception as e:
-            logger.debug(f"Failed to sync participants: {e}")
+        """Add participant context for better responses - DISABLED to prevent infinite API calls"""
+        # DISABLED: Individual /knowledge/add calls during recording cause infinite loops
+        # Participant data is now populated efficiently via bulk /meetings/populate-vector-store after meeting ends
+        logger.debug(f"Participant sync disabled - using bulk population after meeting ends")
+        return
 
 # Global instance for use in WebSocket server
 chatbot_sync = ChatbotSync()

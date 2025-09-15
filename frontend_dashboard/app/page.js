@@ -16,7 +16,7 @@ export default function Dashboard() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingInfo, setRecordingInfo] = useState(null);
 
-  const fetchData = async () => {
+  const fetchData = async (forceRefresh = false) => {
     setLoading(true);
 
     // Check backend health and recording status
@@ -30,8 +30,15 @@ export default function Dashboard() {
         if (recordingResponse.ok) {
           const recordingData = await recordingResponse.json();
           // Only set recording true if there are actual active sessions
-          setIsRecording(recordingData.is_recording && recordingData.active_sessions > 0);
+          const wasRecording = isRecording;
+          const nowRecording = recordingData.is_recording && recordingData.active_sessions > 0;
+          setIsRecording(nowRecording);
           setRecordingInfo(recordingData);
+          
+          // Clear cache if recording status changed
+          if (wasRecording !== nowRecording) {
+            apiService.api.clearCache('meetings');
+          }
         }
       } catch (recordingErr) {
         console.warn('Recording status check failed:', recordingErr);
@@ -44,13 +51,17 @@ export default function Dashboard() {
       setIsRecording(false);
     }
 
-    // Get meetings
+    // Get meetings with cache control
     try {
-      const meetingsData = await apiService.getMeetings();
+      const meetingsData = await apiService.getMeetings({ 
+        skipCache: forceRefresh || isRecording 
+      });
 
       // Handle the response structure
       if (Array.isArray(meetingsData)) {
         setMeetings(meetingsData);
+      } else if (meetingsData.data?.meetings && Array.isArray(meetingsData.data.meetings)) {
+        setMeetings(meetingsData.data.meetings);
       } else if (meetingsData.meetings && Array.isArray(meetingsData.meetings)) {
         setMeetings(meetingsData.meetings);
       } else {
@@ -72,12 +83,11 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-
     fetchData();
 
-    // Smart refresh: 30s when recording, 2min when idle  
-    const refreshInterval = isRecording ? 30000 : 120000; // 30s if recording, 2min otherwise
-    const interval = setInterval(fetchData, refreshInterval);
+    // Smart refresh: 15s when recording, 60s when idle  
+    const refreshInterval = isRecording ? 15000 : 60000; // 15s if recording, 1min otherwise
+    const interval = setInterval(() => fetchData(false), refreshInterval);
     return () => clearInterval(interval);
   }, [isRecording]);
 
@@ -100,7 +110,7 @@ export default function Dashboard() {
               <button
                 onClick={() => {
                   setLoading(true);
-                  fetchData();
+                  fetchData(true); // Force refresh
                 }}
                 disabled={loading}
                 className="px-3 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"

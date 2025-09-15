@@ -1,13 +1,34 @@
 import { config } from './config';
 
-// Centralized API client
+// Centralized API client with caching
 export class ApiClient {
   constructor() {
     this.baseUrl = config.apiUrl;
     this.defaultHeaders = config.apiDefaults.headers;
+    this.cache = new Map();
+    this.cacheTimeout = 30000; // 30 seconds
+  }
+
+  _getCacheKey(endpoint, options) {
+    return `${endpoint}_${JSON.stringify(options || {})}`;
+  }
+
+  _isValidCache(cacheEntry) {
+    return cacheEntry && (Date.now() - cacheEntry.timestamp) < this.cacheTimeout;
   }
 
   async request(endpoint, options = {}) {
+    const cacheKey = this._getCacheKey(endpoint, options);
+    const useCache = !options.skipCache && (options.method === 'GET' || !options.method);
+    
+    // Check cache for GET requests
+    if (useCache) {
+      const cached = this.cache.get(cacheKey);
+      if (this._isValidCache(cached)) {
+        return cached.data;
+      }
+    }
+
     const url = `${this.baseUrl}${endpoint}`;
     
     try {
@@ -33,16 +54,38 @@ export class ApiClient {
         throw new Error(`Expected JSON but received: ${contentType}`);
       }
 
-      return await response.json();
+      const data = await response.json();
+      
+      // Cache GET requests
+      if (useCache) {
+        this.cache.set(cacheKey, {
+          data,
+          timestamp: Date.now()
+        });
+      }
+
+      return data;
     } catch (error) {
       console.error(`API call failed for ${endpoint}:`, error);
       throw error;
     }
   }
 
+  clearCache(pattern) {
+    if (pattern) {
+      for (const key of this.cache.keys()) {
+        if (key.includes(pattern)) {
+          this.cache.delete(key);
+        }
+      }
+    } else {
+      this.cache.clear();
+    }
+  }
+
   // Convenience methods
-  async get(endpoint) {
-    return this.request(endpoint, { method: 'GET' });
+  async get(endpoint, options = {}) {
+    return this.request(endpoint, { method: 'GET', ...options });
   }
 
   async post(endpoint, data) {
@@ -72,9 +115,32 @@ export const apiService = {
   checkHealth: () => api.get(config.endpoints.health),
   
   // Meetings
-  getMeetings: () => api.get(config.endpoints.meetings),
-  getMeeting: (id) => api.get(`${config.endpoints.meetings}/${id}`),
-  getMeetingDetail: (id) => api.get(`${config.endpoints.meetings}/${id}`),
+  getMeetings: (options = {}) => api.get(config.endpoints.meetings, options),
+  getMeeting: (id, options = {}) => api.get(`${config.endpoints.meetings}/${id}`, options),
+  getMeetingDetail: (id, options = {}) => api.get(`${config.endpoints.meetings}/${id}`, options),
+  
+  // Batch meeting data (optimized for detail page)
+  getMeetingWithDetails: async (id, options = {}) => {
+    try {
+      // Get meeting detail and tasks separately since we don't have a combined endpoint
+      const [meetingResponse, tasksResponse] = await Promise.all([
+        api.get(`${config.endpoints.meetings}/${id}`, options),
+        api.get(`${config.endpoints.tasks}?meeting_id=${id}`, options)
+      ]);
+      
+      // Combine the responses
+      return {
+        status: 'success',
+        data: {
+          ...meetingResponse.data,
+          tasks: tasksResponse.data || []
+        }
+      };
+    } catch (error) {
+      console.error('Failed to get meeting with details:', error);
+      throw error;
+    }
+  },
   
   // Tasks
   getTasks: (meetingId) => {

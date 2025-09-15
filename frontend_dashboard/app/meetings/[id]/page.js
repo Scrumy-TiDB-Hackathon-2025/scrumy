@@ -36,8 +36,8 @@ const MeetingDetailPage = () => {
 
   const { isConnected } = useWebSocket(selectedMeeting?.id, handleTranscriptUpdate);
 
-  const refreshTranscript = useCallback(async () => {
-    if (!meetingId || !selectedMeeting) return;
+  const refreshTranscript = useCallback(async (forceRefresh = false) => {
+    if (!meetingId) return;
     
     setRefreshing(true);
     try {
@@ -48,23 +48,34 @@ const MeetingDetailPage = () => {
       // Update meeting active status based on recording status
       setMeetingActive(isRecording);
       
-      // If not recording, stop auto-refresh
-      if (!isRecording) {
-        setAutoRefresh(false);
+      // If not recording, reduce refresh frequency
+      if (!isRecording && autoRefresh) {
+        // Don't stop auto-refresh completely, just slow it down
       }
       
-      const response = await apiService.getMeetingDetail(meetingId);
+      const response = await apiService.getMeetingWithDetails(meetingId, {
+        skipCache: forceRefresh || isRecording
+      });
+      
       if (response.data) {
-        const transcriptData = response.data;
-        const formattedTranscript = transcriptData.transcript_chunks?.map((chunk, index) => ({
+        const meetingData = response.data;
+        const formattedTranscript = meetingData.transcript_chunks?.map((chunk, index) => ({
           speaker: chunk.speaker || `Speaker ${index + 1}`,
           time: chunk.timestamp || '0:00',
           text: chunk.text || '',
           avatar: chunk.speaker ? chunk.speaker.charAt(0).toUpperCase() : 'S'
         })) || [];
         
+        const formattedTasks = meetingData.tasks?.map(task => ({
+          id: task.id,
+          text: task.title,
+          completed: task.status === 'completed',
+          assignee: task.assignee,
+          priority: task.priority
+        })) || [];
+        
         // Check if transcript has new content
-        const currentTranscriptLength = selectedMeeting.transcript?.length || 0;
+        const currentTranscriptLength = selectedMeeting?.transcript?.length || 0;
         const newTranscriptLength = formattedTranscript.length;
         
         if (newTranscriptLength > currentTranscriptLength) {
@@ -74,24 +85,27 @@ const MeetingDetailPage = () => {
         setSelectedMeeting(prev => ({
           ...prev,
           transcript: formattedTranscript,
-          overview: transcriptData.transcript || prev.summary
+          actionItemsList: formattedTasks,
+          overview: meetingData.transcript || meetingData.summary || prev?.summary
         }));
         setLastRefresh(new Date());
       }
     } catch (err) {
-      console.error('Failed to refresh transcript:', err);
+      console.error('Failed to refresh meeting data:', err);
     } finally {
       setRefreshing(false);
     }
-  }, [meetingId, selectedMeeting]);
+  }, [meetingId, selectedMeeting, autoRefresh]);
 
-  // Auto-refresh effect for both tabs
+  // Auto-refresh effect with smart intervals
   useEffect(() => {
     if (!autoRefresh) return;
     
-    const interval = setInterval(refreshTranscript, 5000); // Refresh every 5 seconds
+    // Smart refresh: 10s when active, 30s when ended
+    const refreshInterval = meetingActive ? 10000 : 30000;
+    const interval = setInterval(() => refreshTranscript(false), refreshInterval);
     return () => clearInterval(interval);
-  }, [autoRefresh, refreshTranscript]);
+  }, [autoRefresh, refreshTranscript, meetingActive]);
 
   useEffect(() => {
     const fetchMeeting = async () => {
@@ -99,66 +113,47 @@ const MeetingDetailPage = () => {
       
       try {
         setLoading(true);
-        // First get the meeting from the list
-        const meetingsResponse = await apiService.getMeetings();
-        const meeting = meetingsResponse.data?.meetings?.find(m => m.id == meetingId);
         
-        if (!meeting) {
+        // Single optimized API call to get all meeting data
+        const response = await apiService.getMeetingWithDetails(meetingId, { skipCache: true });
+        
+        if (!response.data) {
           setError('Meeting not found');
           return;
         }
 
-        // Set basic meeting data with defaults
-        const meetingWithDefaults = {
-          ...meeting,
-          actionItemsList: meeting.actionItemsList || [],
-          chatQuestions: meeting.chatQuestions || [],
-          transcript: meeting.transcript || []
-        };
+        const meetingData = response.data;
         
-        setSelectedMeeting(meetingWithDefaults);
+        // Format transcript data
+        const formattedTranscript = meetingData.transcript_chunks?.map((chunk, index) => ({
+          speaker: chunk.speaker || `Speaker ${index + 1}`,
+          time: chunk.timestamp || '0:00',
+          text: chunk.text || '',
+          avatar: chunk.speaker ? chunk.speaker.charAt(0).toUpperCase() : 'S'
+        })) || [];
         
-        // Load detailed transcript and tasks data
-        try {
-          const response = await apiService.getMeetingDetail(meetingId);
-          if (response.data) {
-            const transcriptData = response.data;
-            const formattedTranscript = transcriptData.transcript_chunks?.map((chunk, index) => ({
-              speaker: chunk.speaker || `Speaker ${index + 1}`,
-              time: chunk.timestamp || '0:00',
-              text: chunk.text || '',
-              avatar: chunk.speaker ? chunk.speaker.charAt(0).toUpperCase() : 'S'
-            })) || [];
-            
-            setSelectedMeeting(prev => ({
-              ...prev,
-              transcript: formattedTranscript,
-              overview: transcriptData.transcript || meeting.summary
-            }));
-          }
-        } catch (transcriptErr) {
-          console.error('Failed to load meeting transcript:', transcriptErr);
-        }
+        // Format tasks data
+        const formattedTasks = meetingData.tasks?.map(task => ({
+          id: task.id,
+          text: task.title,
+          completed: task.status === 'completed',
+          assignee: task.assignee,
+          priority: task.priority
+        })) || [];
         
-        // Load tasks for this meeting
-        try {
-          const tasksResponse = await apiService.getTasks(meetingId);
-          const tasksData = tasksResponse.data || [];
-          const formattedTasks = tasksData.map(task => ({
-            id: task.id,
-            text: task.title,
-            completed: task.status === 'completed',
-            assignee: task.assignee,
-            priority: task.priority
-          }));
-          
-          setSelectedMeeting(prev => ({
-            ...prev,
-            actionItemsList: formattedTasks
-          }));
-        } catch (taskErr) {
-          console.error('Failed to load tasks:', taskErr);
-        }
+        // Set complete meeting data
+        setSelectedMeeting({
+          id: meetingData.id,
+          title: meetingData.title || 'Untitled Meeting',
+          date: new Date(meetingData.created_at).toLocaleDateString(),
+          time: new Date(meetingData.created_at).toLocaleTimeString(),
+          duration: meetingData.duration || 'Unknown',
+          transcript: formattedTranscript,
+          actionItemsList: formattedTasks,
+          chatQuestions: meetingData.chatQuestions || [],
+          overview: meetingData.transcript || meetingData.summary || 'No summary available',
+          summary: meetingData.summary
+        });
         
         setError('');
       } catch (err) {
@@ -301,7 +296,7 @@ const MeetingDetailPage = () => {
             </button>
             <div className="ml-auto flex items-center gap-2">
               <button 
-                onClick={refreshTranscript}
+                onClick={() => refreshTranscript(true)}
                 disabled={refreshing}
                 className={`px-3 py-1 text-sm border border-gray-300 rounded ${
                   refreshing 

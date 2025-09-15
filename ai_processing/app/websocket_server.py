@@ -582,8 +582,7 @@ class WebSocketManager:
                         await self.db.save_meeting_transcript(
                             meeting_id=session_id,
                             transcript=transcript_text,
-                            timestamp=transcription_result.get('timestamp', datetime.now().isoformat()),
-                            recording_session_id=getattr(session, 'recording_session_id', session_id)
+                            timestamp=transcription_result.get('timestamp', datetime.now().isoformat())
                         )
                         self.saved_transcript_hashes.add(transcript_hash)
                         print(f"✅ Successfully saved timeout transcript to database")
@@ -774,8 +773,7 @@ class WebSocketManager:
                                 await self.db.save_meeting_transcript(
                                     meeting_id=session.meeting_id,
                                     transcript=final_text,
-                                    timestamp=final_result.get('timestamp', datetime.now().isoformat()),
-                                    recording_session_id=session.recording_session_id
+                                    timestamp=final_result.get('timestamp', datetime.now().isoformat())
                                 )
                                 
                                 # Note: Vector store population happens after meeting ends, not per chunk
@@ -814,8 +812,7 @@ class WebSocketManager:
                 await self.db.save_meeting_transcript(
                     meeting_id=session.meeting_id,
                     transcript=session.cumulative_transcript,
-                    timestamp=datetime.now().isoformat(),
-                    recording_session_id=session.recording_session_id
+                    timestamp=datetime.now().isoformat()
                 )
             
             # Skip AI processing if already completed
@@ -861,7 +858,6 @@ class WebSocketManager:
                             assignee=task.get('assignee', 'Unassigned'),
                             priority=task.get('priority', 'medium'),
                             status='pending',
-                            recording_session_id=session.recording_session_id
                         )
                 
                 # ALWAYS trigger bulk vector store population
@@ -953,11 +949,13 @@ class WebSocketManager:
                 self.meeting_sessions[meeting_id] = MeetingSession(meeting_id, platform)
                 logger.info(f"Created new meeting session: {meeting_id}")
                 
-                # Save meeting to database
+                # Save meeting to database with proper title
                 if self.db:
                     try:
-                        await self.db.save_meeting(meeting_id, f"Meeting {platform} {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-                        logger.info(f"💾 Saved meeting to database: {meeting_id}")
+                        # Generate a more descriptive meeting title
+                        meeting_title = f"{platform.title()} Meeting - {datetime.now().strftime('%B %d, %Y at %I:%M %p')}"
+                        await self.db.save_meeting(meeting_id, meeting_title)
+                        logger.info(f"💾 Saved meeting to database: {meeting_id} with title: {meeting_title}")
                     except Exception as db_error:
                         logger.error(f"Failed to save meeting to database: {db_error}")
             elif existing_session:
@@ -1114,8 +1112,7 @@ class WebSocketManager:
                         await self.db.save_meeting_transcript(
                             meeting_id=session.meeting_id,
                             transcript=transcript_text,
-                            timestamp=transcription_result.get('timestamp', datetime.now().isoformat()),
-                            recording_session_id=session.recording_session_id
+                            timestamp=transcription_result.get('timestamp', datetime.now().isoformat())
                         )
                         self.saved_transcript_hashes.add(transcript_hash)
                         print(f"✅ Successfully saved transcript chunk to database")
@@ -1333,8 +1330,7 @@ class WebSocketManager:
                                         await self.db.save_meeting_transcript(
                                             meeting_id=session.meeting_id,
                                             transcript=final_text,
-                                            timestamp=final_result.get('timestamp', datetime.now().isoformat()),
-                                            recording_session_id=session.recording_session_id
+                                            timestamp=final_result.get('timestamp', datetime.now().isoformat())
                                         )
                                         print(f"✅ Successfully saved final transcript to database")
                                         
@@ -1469,7 +1465,6 @@ class WebSocketManager:
                         summary="",
                         action_items="",
                         key_points="",
-                        recording_session_id=session.recording_session_id
                     )
                     logger.info(f"💾 Saved full transcript to database before AI processing: {len(session.cumulative_transcript)} chars")
                 except Exception as db_error:
@@ -1521,7 +1516,6 @@ class WebSocketManager:
                             assignee=task.get('assignee', 'Unassigned'),
                             priority=task.get('priority', 'medium'),
                             status='pending',
-                            recording_session_id=session.recording_session_id
                         )
                     print(f"💾 Saved {len(tasks['tasks'])} tasks to database")
 
