@@ -29,7 +29,11 @@ from app.pipeline_logger import PipelineLogger
 from app.background_tasks import background_manager
 from app.session_manager import session_manager
 from app.database_interface import DatabaseFactory
-from app.chatbot_sync import chatbot_sync
+try:
+    from app.chatbot_sync import chatbot_sync
+except ImportError:
+    chatbot_sync = None
+    logger.warning("chatbot_sync module not available - chatbot integration disabled")
 import subprocess
 import time
 import uuid
@@ -92,9 +96,10 @@ class AudioProcessor:
                 audio_stats = await self._analyze_audio_file(temp_path)
                 print(f"🎵 Audio Stats: {audio_stats}")
 
-                # Skip processing if clearly silence
+                # Skip processing if clearly silence (be very permissive)
                 if audio_stats.get('is_likely_silence', False):
                     print("⚠️ Skipping Whisper processing - audio appears to be silence")
+                    print(f"   Audio stats: max_amp={audio_stats.get('max_amplitude', 0)}, rms={audio_stats.get('rms', 0):.1f}")
                     os.unlink(temp_path)
                     return {
                         'text': '[SILENCE_DETECTED]',
@@ -134,13 +139,15 @@ class AudioProcessor:
             }
 
     async def _write_audio_to_wav(self, audio_data: bytes, output_path: str, metadata: Dict):
-        """Write audio data to WAV file"""
+        """Write PCM audio data to WAV file with proper header"""
         try:
-            # Default audio parameters
+            # Default audio parameters for Chrome extension
             sample_rate = metadata.get('sampleRate', 16000)
             channels = metadata.get('channels', 1)
             sample_width = metadata.get('sampleWidth', 2)
 
+            # Chrome extension sends raw PCM data, not WAV files
+            # We need to create a proper WAV header
             with wave.open(output_path, 'wb') as wav_file:
                 wav_file.setnchannels(channels)
                 wav_file.setsampwidth(sample_width)
@@ -149,16 +156,52 @@ class AudioProcessor:
 
             # Log audio file details
             duration_ms = (len(audio_data) / (sample_rate * channels * sample_width)) * 1000
-            print(f"📁 Created WAV: {output_path} ({duration_ms:.1f}ms, {len(audio_data)} bytes)")
+            print(f"📁 Created WAV: {output_path} ({duration_ms:.1f}ms, {len(audio_data)} bytes PCM)")
 
         except Exception as e:
             logger.error(f"Error writing WAV file: {e}")
-            # Fallback: write raw data
-            with open(output_path, 'wb') as f:
-                f.write(audio_data)
+            # Fallback: create minimal WAV with proper header
+            try:
+                self._create_minimal_wav(audio_data, output_path, sample_rate, channels, sample_width)
+            except Exception as fallback_error:
+                logger.error(f"Fallback WAV creation failed: {fallback_error}")
+                # Last resort: write raw data
+                with open(output_path, 'wb') as f:
+                    f.write(audio_data)
+    
+    def _create_minimal_wav(self, pcm_data: bytes, output_path: str, sample_rate: int = 16000, channels: int = 1, sample_width: int = 2):
+        """Create a minimal WAV file from PCM data"""
+        import struct
+        
+        # WAV file header
+        data_size = len(pcm_data)
+        file_size = 36 + data_size
+        
+        with open(output_path, 'wb') as f:
+            # RIFF header
+            f.write(b'RIFF')
+            f.write(struct.pack('<I', file_size))
+            f.write(b'WAVE')
+            
+            # fmt chunk
+            f.write(b'fmt ')
+            f.write(struct.pack('<I', 16))  # fmt chunk size
+            f.write(struct.pack('<H', 1))   # PCM format
+            f.write(struct.pack('<H', channels))
+            f.write(struct.pack('<I', sample_rate))
+            f.write(struct.pack('<I', sample_rate * channels * sample_width))
+            f.write(struct.pack('<H', channels * sample_width))
+            f.write(struct.pack('<H', sample_width * 8))
+            
+            # data chunk
+            f.write(b'data')
+            f.write(struct.pack('<I', data_size))
+            f.write(pcm_data)
+        
+        print(f"📁 Created minimal WAV: {output_path} ({len(pcm_data)} bytes PCM)")
 
     async def _analyze_audio_file(self, audio_path: str) -> Dict:
-        """Analyze audio file for quality and content"""
+        """Simple audio analysis"""
         try:
             import wave
             import numpy as np
@@ -171,7 +214,6 @@ class AudioProcessor:
                 if len(audio_data) == 0:
                     return {'is_likely_silence': True, 'error': 'No audio data'}
 
-                # Calculate audio statistics
                 max_amplitude = np.max(np.abs(audio_data))
                 rms = np.sqrt(np.mean(audio_data.astype(np.float64) ** 2))
                 duration = len(audio_data) / sample_rate
@@ -195,20 +237,20 @@ class AudioProcessor:
     async def _transcribe_audio_enhanced(self, audio_path: str) -> str:
         """Enhanced Whisper transcription with better parameters"""
         try:
-            # Enhanced Whisper command with optimized parameters for meeting transcription
+            # More permissive Whisper parameters for Chrome extension audio
             cmd = [
                 self.whisper_executable,
                 '-m', self.whisper_model_path,
                 '-f', audio_path,
                 '--output-txt',
                 '--language', 'en',
-                '--threads', '4',
+                '--threads', '2',
                 '--processors', '1',
-                '--word-thold', '0.4',  # Higher word threshold for better accuracy
-                '--entropy-thold', '2.8',  # Higher entropy threshold to reduce hallucinations
-                '--logprob-thold', '-1.0',  # Better probability threshold
-                '--no-fallback',  # Prevent fallback to less accurate models
-                '--suppress-nst',  # Suppress non-speech tokens
+                '--word-thold', '0.01',  # Much lower threshold for noisy audio
+                '--entropy-thold', '3.5',  # Higher entropy to allow more variation
+                '--logprob-thold', '-2.0',  # Lower probability threshold
+                # Remove --no-fallback to allow fallback processing
+                # Remove --suppress-nst to allow all tokens
             ]
 
             print(f"🤖 Running Enhanced Whisper: {' '.join(cmd)}")
@@ -357,6 +399,7 @@ class MeetingSession:
         
         logger.info(f"Session reset completed - new recording session: {self.recording_session_id}")
 
+
     def update_participants(self, participants_data: List[Dict], participant_count: int = 0):
         """Update participant data from enhanced audio chunk"""
         try:
@@ -446,6 +489,10 @@ class WebSocketManager:
         self.websocket_to_session: Dict[WebSocket, str] = {}  # Track websocket to session mapping
         self.saved_transcript_hashes: Set[str] = set()  # Track saved transcript hashes to prevent duplicates
         self.cleanup_tasks: Dict[str, asyncio.Task] = {}  # Track cleanup tasks for sessions
+        
+        # Batching system configuration
+        self.grace_period = 300  # 5 minutes grace period
+        self.batch_interval = 60  # 1 minute batching interval
         
         # Initialize database using same factory as main app for TiDB compatibility
         self.db = self._init_database()
@@ -556,7 +603,9 @@ class WebSocketManager:
 
             # Check for duplicates before broadcasting
             transcript_text = transcription_result.get('text', '').strip()
-            if not transcript_text or transcript_text in ['[BLANK_AUDIO]', '[SILENCE_DETECTED]', '[PROCESSING_ERROR]', '[WHISPER_ERROR]']:
+            if (not transcript_text or 
+                transcript_text in ['[BLANK_AUDIO]', '[SILENCE_DETECTED]', '[PROCESSING_ERROR]', '[WHISPER_ERROR]', '[HALLUCINATION_FILTERED]', '[LOW_AUDIO_ENERGY]', '[AUDIO_TOO_SHORT]'] or
+                len(transcript_text.strip()) < 3):
                 print(f"⚠️ Skipping empty/invalid timeout transcript: '{transcript_text}'")
                 return
                 
@@ -681,9 +730,14 @@ class WebSocketManager:
                 disconnect_result = await session_manager.handle_disconnect(session_id)
                 logger.info(f"Session disconnect handled: {disconnect_result}")
 
-                # Remove websocket mapping
+                # Remove websocket mappings
                 if websocket in self.websocket_to_session:
                     del self.websocket_to_session[websocket]
+                
+                # Clean up reverse mapping
+                if hasattr(self, '_session_to_websockets'):
+                    for session_websockets in self._session_to_websockets.values():
+                        session_websockets.discard(websocket)
 
             # Mark session for potential cleanup but don't remove immediately
             if meeting_session:
@@ -728,6 +782,9 @@ class WebSocketManager:
                 if not has_active_connections and session.last_disconnect_time:
                     # No reconnection happened, proceed with cleanup and pipeline
                     logger.info(f"Cleaning up session after timeout: {meeting_id}")
+                    
+                    # Stop batch timer and send final batch
+                    await self._stop_batch_timer(meeting_id)
                     
                     # Trigger final processing pipeline
                     await self._finalize_session(session)
@@ -782,6 +839,9 @@ class WebSocketManager:
                         logger.error(f"Error processing final audio: {e}")
                         if os.path.exists(wav_path):
                             os.unlink(wav_path)
+            
+            # Stop batch timer and send final batch
+            await self._stop_batch_timer(session.meeting_id)
             
             # Generate meeting summary if we have transcript content
             if session.cumulative_transcript.strip():
@@ -860,10 +920,11 @@ class WebSocketManager:
                             status='pending',
                         )
                 
-                # ALWAYS trigger bulk vector store population
+                # Final flush of any remaining live transcripts + end summary
                 try:
+                    await self._stop_batch_timer(session.meeting_id)
                     await self._populate_vector_store(session.meeting_id, summary, tasks)
-                    print(f"✅ Meeting data added to vector store for chatbot access")
+                    print(f"✅ Meeting data added to vector store")
                 except Exception as vector_error:
                     print(f"❌ Failed to populate vector store: {vector_error}")
                     logger.error(f"Failed to populate vector store: {vector_error}")
@@ -934,16 +995,26 @@ class WebSocketManager:
                 logger.warning("Received empty audio chunk")
                 return
 
-            # Get or create meeting session - use consistent ID generation
-            meeting_id = f"{platform}_{hash(meeting_url) % 1000000}"
+            # Get meeting ID from message or generate consistent ID
+            message_meeting_id = message.get('meetingId')
+            if message_meeting_id:
+                meeting_id = message_meeting_id
+                print(f"🆔 Using meeting ID from Chrome extension: {meeting_id}")
+            else:
+                meeting_id = f"{platform}_{hash(meeting_url) % 1000000}"
+                print(f"🆔 Generated meeting ID from URL: {meeting_id}")
             
-            # Check if session already exists with different ID format
+            # Check if session already exists
             existing_session = None
-            for session in self.meeting_sessions.values():
-                if session.meeting_url == meeting_url and session.platform == platform:
-                    existing_session = session
-                    meeting_id = session.meeting_id  # Use existing ID
-                    break
+            if meeting_id in self.meeting_sessions:
+                existing_session = self.meeting_sessions[meeting_id]
+            else:
+                # Also check by URL for backward compatibility
+                for session in self.meeting_sessions.values():
+                    if session.meeting_url == meeting_url and session.platform == platform:
+                        existing_session = session
+                        meeting_id = session.meeting_id  # Use existing ID
+                        break
 
             if meeting_id not in self.meeting_sessions and not existing_session:
                 self.meeting_sessions[meeting_id] = MeetingSession(meeting_id, platform)
@@ -977,7 +1048,7 @@ class WebSocketManager:
                 
                 # Sync participants to chatbot (non-blocking)
                 participant_names = [p.get('name', 'Unknown') for p in participants if p.get('name')]
-                if participant_names:
+                if participant_names and chatbot_sync:
                     asyncio.create_task(chatbot_sync.add_meeting_participants(meeting_id, participant_names))
             
             # Clear disconnect time and cancel cleanup if reconnected (preserve grace period)
@@ -989,7 +1060,16 @@ class WebSocketManager:
                     logger.info(f"Cancelled cleanup task for reconnected session: {meeting_id}")
                     session.is_reconnected_session = True  # Mark as reconnection within grace period
 
+            # Ensure proper session association
             self.active_connections[websocket]['meeting_session'] = session
+            self.websocket_to_session[websocket] = meeting_id
+            
+            # Also ensure reverse mapping for session lookup
+            if not hasattr(self, '_session_to_websockets'):
+                self._session_to_websockets = {}
+            if meeting_id not in self._session_to_websockets:
+                self._session_to_websockets[meeting_id] = set()
+            self._session_to_websockets[meeting_id].add(websocket)
 
             # Log audio chunk (if logger available)
             if session.buffer.logger:
@@ -1070,7 +1150,9 @@ class WebSocketManager:
                 print(f"🔄 Buffering audio chunk ({audio_buffer.get_duration_ms():.1f}ms/{audio_buffer.target_duration_ms}ms)")
                 # Still save any transcript we got to database before early return
                 transcript_text = transcription_result.get('text', '').strip()
-                if self.db and transcript_text and transcript_text not in ['[BLANK_AUDIO]', '[SILENCE_DETECTED]', '[PROCESSING_ERROR]', '[WHISPER_ERROR]']:
+                if (self.db and transcript_text and 
+                    transcript_text not in ['[BLANK_AUDIO]', '[SILENCE_DETECTED]', '[PROCESSING_ERROR]', '[WHISPER_ERROR]', '[HALLUCINATION_FILTERED]', '[LOW_AUDIO_ENERGY]', '[AUDIO_TOO_SHORT]'] and
+                    len(transcript_text.strip()) > 3):
                     try:
                         print(f"💾 Saving buffered transcript to DB: '{transcript_text[:50]}...'")
                         await self.db.save_meeting_transcript(
@@ -1103,7 +1185,9 @@ class WebSocketManager:
             
             # Save transcript chunk to database immediately (with hash check)
             transcript_text = transcription_result.get('text', '').strip()
-            if self.db and transcript_text and transcript_text not in ['[BLANK_AUDIO]', '[SILENCE_DETECTED]', '[PROCESSING_ERROR]', '[WHISPER_ERROR]']:
+            if (self.db and transcript_text and 
+                transcript_text not in ['[BLANK_AUDIO]', '[SILENCE_DETECTED]', '[PROCESSING_ERROR]', '[WHISPER_ERROR]', '[HALLUCINATION_FILTERED]', '[LOW_AUDIO_ENERGY]', '[AUDIO_TOO_SHORT]'] and
+                len(transcript_text.strip()) > 3):
                 import hashlib
                 transcript_hash = hashlib.md5(f"{session.meeting_id}:{transcript_text}".encode()).hexdigest()
                 if transcript_hash not in self.saved_transcript_hashes:
@@ -1117,9 +1201,9 @@ class WebSocketManager:
                         self.saved_transcript_hashes.add(transcript_hash)
                         print(f"✅ Successfully saved transcript chunk to database")
                         
-                        # Sync to chatbot for real-time context (non-blocking)
+                        # LIVE BATCH: Add transcript to chatbot immediately during meeting
                         speaker_name = participants[0].get('name', 'Unknown') if participants else 'Unknown'
-                        asyncio.create_task(chatbot_sync.add_live_transcript_chunk(
+                        asyncio.create_task(self._add_live_transcript_to_chatbot(
                             meeting_id, transcript_text, speaker_name
                         ))
                         
@@ -1268,22 +1352,6 @@ class WebSocketManager:
         elif event_type in ['ended', 'meeting_ended']:
             print(f"\n🏁 Meeting ended - starting final processing...")
 
-            # Check if this is a buffer flush completion signal (support both formats)
-            buffer_flush_complete = data.get('bufferFlushComplete', data.get('buffer_flush_complete', False))
-
-            if not buffer_flush_complete:
-                # Legacy behavior or partial end signal - wait for buffer flush
-                print("⏳ Meeting end signal received - waiting for buffer flush completion...")
-                print(f"📋 Data received: {data}")
-                await self.send_message(websocket, {
-                    'type': 'PROCESSING_STATUS',
-                    'data': {
-                        'message': 'Waiting for audio buffer flush completion...',
-                        'stage': 'buffer_flush_wait'
-                    }
-                })
-                return
-
             # Send initial processing status
             await self.send_message(websocket, {
                 'type': 'PROCESSING_STATUS',
@@ -1295,11 +1363,25 @@ class WebSocketManager:
 
             # Process final summary if we have a session
             connection_info = self.active_connections.get(websocket)
+            session = None
+            
+            # Try to get session from connection info first
             if connection_info and connection_info.get('meeting_session'):
                 session = connection_info['meeting_session']
+                print(f"📋 Found session from connection: {session.meeting_id}")
+            
+            # If no session from connection, try to find by meeting ID from message
+            if not session and data.get('meetingId'):
+                message_meeting_id = data.get('meetingId')
+                if message_meeting_id in self.meeting_sessions:
+                    session = self.meeting_sessions[message_meeting_id]
+                    print(f"📋 Found session by message meeting ID: {session.meeting_id}")
+                    # Associate this session with the websocket for cleanup
+                    self.active_connections[websocket]['meeting_session'] = session
+            
+            if session:
                 print(f"📋 Processing meeting: {session.meeting_id}")
                 print(f"👥 Participants: {', '.join(session.participants)}")
-
                 # Process any remaining buffered audio
                 audio_buffer = self.audio_buffer_manager.get_buffer(session.meeting_id)
                 if len(audio_buffer.buffer) > 0:
@@ -1333,8 +1415,6 @@ class WebSocketManager:
                                             timestamp=final_result.get('timestamp', datetime.now().isoformat())
                                         )
                                         print(f"✅ Successfully saved final transcript to database")
-                                        
-                                        # Note: Vector store population happens after meeting ends, not per chunk
                                     except Exception as db_error:
                                         print(f"❌ Failed to save final transcript: {db_error}")
                                         logger.error(f"Failed to save final transcript: {db_error}")
@@ -1352,7 +1432,7 @@ class WebSocketManager:
                                     WebSocketEventTypes.TRANSCRIPTION_RESULT,
                                     final_transcription_data,
                                     source="websocket_server_final",
-                                    session_id=meeting_id
+                                    session_id=session.meeting_id
                                 )
 
                                 # Send transcription result with processing complete flag
@@ -1393,6 +1473,8 @@ class WebSocketManager:
                 print(f"🧹 Cleaned up audio buffer for {session.meeting_id}")
             else:
                 print(f"⚠️ No active meeting session found")
+                print(f"🔍 Available sessions: {list(self.meeting_sessions.keys())}")
+                print(f"🔍 Message meeting ID: {data.get('meetingId')}")
                 # Send completion even if no session
                 await self.send_message(websocket, {
                     'type': 'PROCESSING_COMPLETE',
@@ -1406,38 +1488,201 @@ class WebSocketManager:
 
 
     
-    async def _populate_vector_store(self, meeting_id: str, summary: dict, tasks: dict):
-        """Trigger bulk vector store population using the efficient /meetings/populate-vector-store endpoint"""
+    async def _populate_vector_store_immediate(self, meeting_id: str, summary: dict, tasks: dict):
+        """IMMEDIATE vector store population for hackathon demo - ensures judges can query instantly"""
         try:
             import httpx
             import os
             
-            # Get chatbot URL from environment
             chatbot_url = os.getenv('CHATBOT_URL', 'http://127.0.0.1:8001')
-            populate_endpoint = f"{chatbot_url}/meetings/populate-vector-store"
-            
-            # Skip if chatbot URL is disabled
             if chatbot_url.lower() in ['none', 'disabled', '']:
-                print(f"⚠️ Chatbot integration disabled - skipping vector store population")
+                print(f"⚠️ Chatbot integration disabled")
                 return
             
-            # Call the bulk population endpoint (more efficient than individual /knowledge/add calls)
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(populate_endpoint)
-                result = response.json()
+            # Method 1: Add specific meeting data immediately
+            meeting_text = f"""LATEST MEETING: {summary.get('summary', 'Meeting completed')}
+Meeting ID: {meeting_id}
+Participants: {', '.join(summary.get('participants', []))}
+Key Points: {'; '.join(summary.get('key_points', []))}
+Decisions: {'; '.join(summary.get('decisions', []))}"""
+            
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                # Add meeting summary
+                await client.post(f"{chatbot_url}/knowledge/add", json={
+                    "content": meeting_text,
+                    "metadata": {"type": "meeting", "meeting_id": meeting_id, "timestamp": datetime.now().isoformat()}
+                })
                 
-                if result.get('status') == 'success':
-                    details = result.get('details', {})
-                    print(f"✅ Bulk populated vector store: {details.get('total_items', 0)} items")
-                    print(f"   - Meetings: {details.get('meetings_added', 0)}")
-                    print(f"   - Tasks: {details.get('tasks_added', 0)}")
-                    print(f"   - Transcripts: {details.get('transcripts_added', 0)}")
-                else:
-                    print(f"❌ Bulk population failed: {result.get('error', 'Unknown error')}")
+                # Add each task individually for immediate access
+                for task in tasks.get('tasks', []):
+                    task_text = f"""TASK: {task.get('title', 'Untitled')}
+Assignee: {task.get('assignee', 'Unassigned')}
+Description: {task.get('description', '')}
+Priority: {task.get('priority', 'medium')}
+From Meeting: {meeting_id}"""
+                    
+                    await client.post(f"{chatbot_url}/knowledge/add", json={
+                        "content": task_text,
+                        "metadata": {"type": "task", "meeting_id": meeting_id, "assignee": task.get('assignee')}
+                    })
+                
+                print(f"✅ IMMEDIATE: Added meeting + {len(tasks.get('tasks', []))} tasks to chatbot")
             
         except Exception as e:
-            print(f"❌ Failed to trigger bulk vector store population: {e}")
-            # Don't re-raise - this is not critical for meeting processing
+            print(f"❌ Failed immediate vector store update: {e}")
+    
+    async def _start_batch_timer(self, meeting_id: str):
+        """Start periodic batching timer for a meeting"""
+        if not hasattr(self, '_batch_tasks'):
+            self._batch_tasks = {}
+            
+        if meeting_id in self._batch_tasks and not self._batch_tasks[meeting_id].done():
+            return  # Already running
+            
+        self._batch_tasks[meeting_id] = asyncio.create_task(self._batch_timer_loop(meeting_id))
+        logger.info(f"Started transcript batching timer for {meeting_id}")
+    
+    async def _batch_timer_loop(self, meeting_id: str):
+        """Periodic timer to send transcript batches every minute"""
+        try:
+            while meeting_id in self.meeting_sessions:
+                await asyncio.sleep(self.batch_interval)
+                
+                # Check if meeting still exists
+                if meeting_id not in self.meeting_sessions:
+                    break
+                    
+                # Check if we're still within grace period
+                if hasattr(self, '_last_transcript_times') and meeting_id in self._last_transcript_times:
+                    time_since_last = time.time() - self._last_transcript_times[meeting_id]
+                    if time_since_last > self.grace_period:
+                        logger.info(f"Grace period exceeded for {meeting_id}, stopping batch timer")
+                        break
+                
+                # Send batch if we have data and recent activity
+                if self._has_recent_activity(meeting_id):
+                    await self._flush_live_transcript_buffer(meeting_id)
+                    
+        except asyncio.CancelledError:
+            logger.info(f"Batch timer cancelled for {meeting_id}")
+        except Exception as e:
+            logger.error(f"Error in batch timer for {meeting_id}: {e}")
+        finally:
+            # Clean up timer reference
+            if hasattr(self, '_batch_tasks') and meeting_id in self._batch_tasks:
+                del self._batch_tasks[meeting_id]
+    
+    def _has_recent_activity(self, meeting_id: str) -> bool:
+        """Check if there's been recent transcript activity for a meeting"""
+        if not hasattr(self, '_last_transcript_times'):
+            return False
+        if meeting_id not in self._last_transcript_times:
+            return False
+        return (time.time() - self._last_transcript_times[meeting_id]) < self.grace_period
+    
+    async def _add_live_transcript_to_chatbot(self, meeting_id: str, transcript_text: str, speaker_name: str):
+        """Buffer transcript chunks for time-based batching"""
+        try:
+            # Initialize buffers if not exists
+            if not hasattr(self, '_live_transcript_buffer'):
+                self._live_transcript_buffer = {}
+            if not hasattr(self, '_last_transcript_times'):
+                self._last_transcript_times = {}
+            
+            if meeting_id not in self._live_transcript_buffer:
+                self._live_transcript_buffer[meeting_id] = []
+            
+            # Add to buffer
+            self._live_transcript_buffer[meeting_id].append({
+                "text": transcript_text,
+                "speaker": speaker_name,
+                "timestamp": datetime.now().isoformat()
+            })
+            
+            # Update last activity time
+            self._last_transcript_times[meeting_id] = time.time()
+            
+            # Start batch timer if not already running
+            await self._start_batch_timer(meeting_id)
+                
+        except Exception as e:
+            print(f"❌ Live transcript batch failed: {e}")
+    
+    async def _flush_live_transcript_buffer(self, meeting_id: str):
+        """Flush buffered transcripts to chatbot"""
+        try:
+            import httpx
+            chatbot_url = os.getenv('CHATBOT_URL', 'http://127.0.0.1:8001')
+            
+            if not hasattr(self, '_live_transcript_buffer') or meeting_id not in self._live_transcript_buffer:
+                return
+                
+            buffer = self._live_transcript_buffer[meeting_id]
+            if not buffer:
+                return
+            
+            # Don't send if no recent activity (disconnection scenario)
+            if not self._has_recent_activity(meeting_id):
+                logger.info(f"No recent activity for {meeting_id}, skipping batch send")
+                return
+            
+            # Create combined transcript text
+            combined_text = f"""LIVE MEETING TRANSCRIPT - {meeting_id}
+{chr(10).join([f"{item['speaker']}: {item['text']}" for item in buffer])}
+Timestamp: {buffer[-1]['timestamp']}"""
+            
+            # Send to chatbot
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                await client.post(f"{chatbot_url}/knowledge/add", json={
+                    "content": combined_text,
+                    "metadata": {"type": "live_transcript", "meeting_id": meeting_id, "chunk_count": len(buffer)}
+                })
+            
+            print(f"✅ LIVE BATCH: Added {len(buffer)} transcript chunks to chatbot for {meeting_id}")
+            
+            # Clear buffer
+            self._live_transcript_buffer[meeting_id] = []
+            
+        except Exception as e:
+            print(f"❌ Live batch flush failed for {meeting_id}: {e}")
+    
+    async def _stop_batch_timer(self, meeting_id: str):
+        """Stop the batch timer and send final batch for a meeting"""
+        if hasattr(self, '_batch_tasks') and meeting_id in self._batch_tasks:
+            task = self._batch_tasks[meeting_id]
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+            del self._batch_tasks[meeting_id]
+        
+        # Send final batch if any data remains
+        if (hasattr(self, '_live_transcript_buffer') and 
+            meeting_id in self._live_transcript_buffer and 
+            self._live_transcript_buffer[meeting_id]):
+            logger.info(f"Sending final transcript batch for {meeting_id}")
+            await self._flush_live_transcript_buffer(meeting_id)
+            
+        # Clean up meeting-specific data
+        if hasattr(self, '_live_transcript_buffer') and meeting_id in self._live_transcript_buffer:
+            del self._live_transcript_buffer[meeting_id]
+        if hasattr(self, '_last_transcript_times') and meeting_id in self._last_transcript_times:
+            del self._last_transcript_times[meeting_id]
+    
+    async def _populate_vector_store(self, meeting_id: str, summary: dict, tasks: dict):
+        """End-of-meeting population"""
+        try:
+            import httpx
+            chatbot_url = os.getenv('CHATBOT_URL', 'http://127.0.0.1:8001')
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(f"{chatbot_url}/meetings/populate-vector-store")
+                result = response.json()
+                if result.get('status') == 'success':
+                    print(f"✅ End-of-meeting: {result.get('details', {}).get('total_items', 0)} items")
+        except Exception as e:
+            print(f"❌ End-of-meeting population failed: {e}")
     
     async def _generate_meeting_summary(self, websocket: WebSocket, session: MeetingSession):
         """Generate and send meeting summary (only if AI is available)"""
@@ -1480,7 +1725,16 @@ class WebSocketManager:
             tasks = {}
 
             try:
-                print(f"🤖 Starting AI processing...")
+                # Ensure environment is loaded for AI processing
+                from dotenv import load_dotenv
+                load_dotenv()
+                
+                # Verify API key is available
+                groq_key = os.getenv('GROQ_API_KEY')
+                if not groq_key:
+                    raise Exception("GROQ API key not found - AI processing disabled")
+                
+                print(f"🤖 Starting AI processing with API key: {groq_key[:10]}...")
 
                 # Generate comprehensive summary
                 print(f"📋 Generating meeting summary...")
@@ -1765,13 +2019,30 @@ from contextlib import asynccontextmanager
 import os
 from dotenv import load_dotenv
 
-# Load environment
-env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
-if os.path.exists(env_path):
-    load_dotenv(env_path)
-    print("✅ Loaded environment from .env")
+# Load environment from multiple possible locations
+load_dotenv()  # Load from current directory first
+
+# Also try specific paths
+env_paths = [
+    os.path.join(os.path.dirname(__file__), '..', '.env'),
+    os.path.join(os.path.dirname(__file__), '.env'),
+    '.env'
+]
+
+for env_path in env_paths:
+    if os.path.exists(env_path):
+        load_dotenv(env_path, override=True)
+        print(f"✅ Loaded environment from {env_path}")
+        break
 else:
-    print("⚠️  No .env file found")
+    print("⚠️  No .env file found in any location")
+
+# Verify GROQ API key is loaded
+groq_key = os.getenv('GROQ_API_KEY')
+if groq_key:
+    print(f"✅ GROQ API key loaded: {groq_key[:10]}...")
+else:
+    print("❌ GROQ API key not found - task extraction will be disabled")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

@@ -22,23 +22,17 @@ from .retry_manager import retry_manager, RetryableError
 
 # Load shared environment variables first
 def load_shared_env():
-    """Load shared environment variables from /shared/.tidb.env"""
+    """Load integration environment variables from shared/.tidb.env"""
+    from dotenv import load_dotenv
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(os.path.dirname(current_dir))
     shared_env_path = os.path.join(project_root, 'shared', '.tidb.env')
-
+    
     if os.path.exists(shared_env_path):
-        with open(shared_env_path, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith('#') and '=' in line:
-                    key, value = line.split('=', 1)
-                    # Remove quotes if present
-                    value = value.strip('"\'')
-                    os.environ[key] = value
-        logging.info(f"Loaded shared environment from {shared_env_path}")
+        load_dotenv(shared_env_path, override=True)
+        logging.info(f"Loaded environment from {shared_env_path}")
     else:
-        logging.warning(f"Shared environment file not found: {shared_env_path}")
+        logging.warning(f"Environment file not found: {shared_env_path}")
 
 # Global flag to track integration availability
 INTEGRATION_AVAILABLE = False
@@ -52,7 +46,7 @@ def _import_integration_system():
     if INTEGRATION_AVAILABLE:
         return True
 
-    # Load shared environment
+    # Load integration environment with real API credentials
     load_shared_env()
 
     # Use absolute path to integration directory
@@ -392,30 +386,38 @@ class AIProcessingIntegrationBridge:
                         })
 
                 # Handle retry manager response format
-                task_result = result.get("result", result) if result.get("success") else result
+                if result.get("success"):
+                    task_result = result.get("result", {})
+                    
+                    # Check if task was actually created
+                    if task_result.get("task_created"):
+                        results["tasks_created"] += 1
 
-                if result.get("success") and task_result.get("task_created"):
-                    results["tasks_created"] += 1
+                        # Track successful integrations
+                        integrations_used = task_result.get("integrations_used", [])
+                        for integration in integrations_used:
+                            if integration not in results["successful_integrations"]:
+                                results["successful_integrations"].append(integration)
 
-                    # Track successful integrations
-                    integrations_used = task_result.get("integrations_used", [])
-                    for integration in integrations_used:
-                        if integration not in results["successful_integrations"]:
-                            results["successful_integrations"].append(integration)
+                        # Collect task URLs
+                        task_urls = task_result.get("task_urls", {})
+                        for platform, url in task_urls.items():
+                            if platform not in results["task_urls"]:
+                                results["task_urls"][platform] = []
+                            results["task_urls"][platform].append(url)
 
-                    # Collect task URLs
-                    task_urls = task_result.get("task_urls", {})
-                    for platform, url in task_urls.items():
-                        if platform not in results["task_urls"]:
-                            results["task_urls"][platform] = []
-                        results["task_urls"][platform].append(url)
+                        logger.info(f"Task {i+1} created successfully: {integration_task['title']}")
 
-                    logger.info(f"Task {i+1} created successfully: {integration_task['title']}")
-
-                    # Log retry statistics if retries were used
-                    if result.get("attempts_made", 1) > 1:
-                        logger.info(f"Task {i+1} succeeded after {result.get('attempts_made')} attempts")
+                        # Log retry statistics if retries were used
+                        if result.get("attempts_made", 1) > 1:
+                            logger.info(f"Task {i+1} succeeded after {result.get('attempts_made')} attempts")
+                    else:
+                        # Task creation returned success=True but task_created=False
+                        error_msg = f"Task {i+1} creation returned success but task not created: {integration_task['title']}"
+                        results["errors"].append(error_msg)
+                        logger.warning(error_msg)
                 else:
+                    # Task creation failed
                     error_details = result.get('error', 'Unknown error')
                     if result.get('retries_exhausted'):
                         error_msg = f"Task {i+1} creation failed after {result.get('attempts_made')} attempts: {error_details}"

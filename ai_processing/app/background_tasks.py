@@ -47,27 +47,15 @@ class BackgroundTaskManager:
                 buffer_count = len(self._audio_buffer_manager.buffers) if self._audio_buffer_manager else 0
 
                 if self._audio_buffer_manager and buffer_count > 0:
-                    # Only log when there are buffers with content or processing needed
-                    has_activity = False
-
+                    # Only process and log when there's actual timeout processing needed
                     for session_id, buffer in list(self._audio_buffer_manager.buffers.items()):
-                        duration = buffer.get_duration_ms()
-                        time_since_flush = time.time() - buffer.last_flush if buffer.last_flush else 0
-                        buffer_len = len(buffer.buffer)
-
                         # Check if buffer should be processed (handles both buffer full and timeout)
                         if buffer.should_process():
-                            if not has_activity:
-                                print(f"🔍 [DEBUG] Background check: {buffer_count} buffers in manager")
-                                has_activity = True
+                            duration = buffer.get_duration_ms()
+                            time_since_flush = time.time() - buffer.last_flush if buffer.last_flush else 0
                             print(f"⏰ Timeout triggered for session {session_id} ({duration:.1f}ms, {time_since_flush:.1f}s)")
                             await self._process_timeout_buffer(session_id, buffer)
-                        elif duration > 0 or time_since_flush < 10:  # Only log if there's recent activity
-                            if not has_activity:
-                                print(f"🔍 [DEBUG] Background check: {buffer_count} buffers in manager")
-                                has_activity = True
-                            print(f"   Buffer {session_id}: {duration:.1f}ms, {buffer_len} bytes, {time_since_flush:.1f}s since flush")
-                # Skip logging when no buffers or no activity
+                # Skip all other logging - no need to log every second
 
             except Exception as e:
                 print(f"❌ Error in timeout checker: {e}")

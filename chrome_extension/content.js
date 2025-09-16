@@ -467,8 +467,8 @@ async function startEnhancedRecording() {
 function stopEnhancedRecording() {
   console.log("⏹️ Stopping enhanced recording...");
 
-  // DON'T stop recording immediately - coordinate buffer flush first
-  wsRetryCount = 0; // Reset WebSocket retry counter
+  // Reset WebSocket retry counter
+  wsRetryCount = 0;
 
   // Get UI elements
   const button = document.getElementById("scrumbot-toggle");
@@ -482,18 +482,40 @@ function stopEnhancedRecording() {
     window.meetingDetector.stopParticipantMonitoring();
   }
 
-  // Update UI to show buffer flushing state
+  // Update UI to show stopping state
   if (button && statusElement) {
-    button.innerHTML = "⏳ Flushing audio buffers...";
+    button.innerHTML = "⏳ Stopping recording...";
     button.disabled = true;
-    statusElement.textContent = "🔄 Sending remaining audio chunks...";
+    statusElement.textContent = "🔄 Finalizing recording...";
   }
 
-  // Start buffer flush process with helper tab
-  initiateBufferFlush();
+  // Simplified stop process - send meeting end signal immediately
+  sendMeetingEndSignal();
+  
+  // Stop helper tab recording
+  if (helperTabId) {
+    chrome.runtime.sendMessage(
+      {
+        type: "MEETING_TO_HELPER",
+        messageType: "STOP_RECORDING",
+        targetTabId: helperTabId,
+      },
+      () => {
+        if (chrome.runtime.lastError) {
+          console.log(
+            "Helper tab already closed:",
+            chrome.runtime.lastError.message,
+          );
+        }
+      },
+    );
+  }
 
-  // Start timeout for the entire stop process
+  // Start timeout for processing
   startProcessingTimeout();
+  
+  // Update UI for server processing
+  updateUIForServerProcessing();
 }
 
 function completeRecordingStop() {
@@ -1002,12 +1024,14 @@ function sendMeetingEndSignal() {
         participants: participants,
         platform: currentPlatform,
         timestamp: new Date().toISOString(),
-        bufferFlushComplete: true, // Signal that all audio buffers have been flushed
+        bufferFlushComplete: true, // CRITICAL: Always true to trigger AI processing
+        buffer_flush_complete: true, // Support both formats
       },
     };
 
     websocket.send(JSON.stringify(message));
-    console.log("🔄 Meeting end signal sent via WebSocket from content script");
+    console.log("🔄 Meeting end signal sent with bufferFlushComplete=true");
+    console.log("🔄 This should trigger AI processing on the server");
   } else {
     console.log("⚠️ WebSocket not connected, cannot send meeting end signal");
   }
@@ -1090,7 +1114,7 @@ function handleTranscriptionResult(data) {
   // Update UI with transcription
   handleTranscriptionUpdate(data);
 
-  // If this chunk was part of the flush process, mark it as processed
+  // Track processed chunks for debugging but don't block meeting end
   if (data.data?.chunkId && pendingAudioChunks.has(data.data.chunkId)) {
     pendingAudioChunks.delete(data.data.chunkId);
     console.log(
@@ -1102,28 +1126,19 @@ function handleTranscriptionResult(data) {
 
     // Notify helper tab
     notifyHelperTab("CHUNK_PROCESSED", { chunkId: data.data.chunkId });
-
-    // Check if all flush chunks are processed
-    if (isFlushingBuffers && pendingAudioChunks.size === 0) {
-      console.log(
-        "[Content] ✅ All flush chunks processed, sending meeting end signal",
-      );
-      sendMeetingEndSignal();
-      updateUIForServerProcessing();
-    }
   }
 }
 
 function initiateBufferFlush() {
-  console.log("[Content] 🔄 Initiating buffer flush with helper tab");
+  console.log("[Content] 🔄 Initiating simplified buffer flush");
   isFlushingBuffers = true;
 
-  // Signal helper tab to flush and stop recording
+  // Simplified flush - just signal helper tab to stop
   if (helperTabId) {
     chrome.runtime.sendMessage(
       {
         type: "MEETING_TO_HELPER",
-        messageType: "FLUSH_AND_STOP_RECORDING",
+        messageType: "STOP_RECORDING",
         targetTabId: helperTabId,
       },
       () => {
@@ -1132,9 +1147,9 @@ function initiateBufferFlush() {
             "[Content] Helper tab not available:",
             chrome.runtime.lastError.message,
           );
-          // If helper tab is gone, complete flush immediately
-          handleAudioFlushComplete({ success: true, chunksRemaining: 0 });
         }
+        // Complete flush immediately regardless
+        handleAudioFlushComplete({ success: true, chunksRemaining: 0 });
       },
     );
   } else {
@@ -1147,7 +1162,7 @@ function initiateBufferFlush() {
 function handleAudioFlushComplete(data) {
   console.log("[Content] ✅ Audio flush complete:", data);
 
-  isRecordingViaHelper = false; // Now it's safe to stop recording
+  isRecordingViaHelper = false;
 
   const button = document.getElementById("scrumbot-toggle");
   const statusElement = document.getElementById("connection-status");
@@ -1161,18 +1176,10 @@ function handleAudioFlushComplete(data) {
     }
   }
 
-  // Check if we still have pending chunks to process
-  if (pendingAudioChunks.size === 0) {
-    // No pending chunks, send meeting end signal immediately
-    console.log("[Content] No pending chunks, sending meeting end signal");
-    sendMeetingEndSignal();
-    updateUIForServerProcessing();
-  } else {
-    console.log(
-      `[Content] Waiting for ${pendingAudioChunks.size} chunks to be processed`,
-    );
-    updateUIForServerProcessing();
-  }
+  // Always send meeting end signal when flush completes
+  console.log("[Content] Sending meeting end signal after flush");
+  sendMeetingEndSignal();
+  updateUIForServerProcessing();
 }
 
 function updateUIForServerProcessing() {

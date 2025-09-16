@@ -27,16 +27,16 @@ class AudioChunk:
 class SessionAudioBuffer:
     """Enhanced buffer with 3s target duration for better speech recognition"""
     
-    def __init__(self, session_id: str, target_duration_ms: int = 5000):
+    def __init__(self, session_id: str, target_duration_ms: int = 3000):
         self.session_id = session_id
-        self.target_duration_ms = target_duration_ms  # Increased to 5000ms for better context
+        self.target_duration_ms = target_duration_ms  # Reduced to 3000ms for better responsiveness
         self.buffer = bytearray()
-        self.target_samples = (target_duration_ms * 16000) // 1000  # 80000 samples for 5s
+        self.target_samples = (target_duration_ms * 16000) // 1000  # 48000 samples for 3s
         self.last_flush = None  # Set when first chunk arrives
         self.sample_rate = 16000
         self.channels = 1
         self.sample_width = 2
-        self.timeout_seconds = 8.0  # Increased to 8.0s for longer context
+        self.timeout_seconds = 5.0  # Reduced to 5.0s for better responsiveness
         
         logger.info(f"Enhanced audio buffer: {session_id}, target={target_duration_ms}ms ({self.target_samples} samples)")
         
@@ -64,23 +64,30 @@ class SessionAudioBuffer:
             return False
     
     def should_process(self) -> bool:
-        """Process if buffer is full OR timeout reached"""
+        """Process if buffer is full OR timeout reached, with minimum duration check"""
         if len(self.buffer) == 0 or self.last_flush is None:
             return False
             
         bytes_per_sample = self.sample_width * self.channels
         current_samples = len(self.buffer) // bytes_per_sample
         time_since_flush = time.time() - self.last_flush
+        duration_ms = (current_samples / self.sample_rate) * 1000
         
-        # Process if buffer is full OR timeout reached
-        buffer_full = current_samples >= (self.target_samples * 0.98)  # 98% threshold
+        # Ensure minimum duration for quality transcription
+        min_duration_ms = 1000  # At least 1 second of audio
+        has_min_duration = duration_ms >= min_duration_ms
+        
+        # Process if buffer is full OR timeout reached (but only if we have minimum duration)
+        buffer_full = current_samples >= (self.target_samples * 0.95)  # 95% threshold
         timeout_reached = time_since_flush > self.timeout_seconds
         
-        if buffer_full or timeout_reached:
-            duration_ms = (current_samples / self.sample_rate) * 1000
-            reason = "buffer_full" if buffer_full else "timeout"
-            logger.debug(f"Buffer ready: {reason}, {duration_ms:.1f}ms, {current_samples} samples, time_since_flush={time_since_flush:.1f}s")
+        if (buffer_full or timeout_reached) and has_min_duration:
             return True
+        elif timeout_reached and not has_min_duration:
+            # Only log occasionally to avoid spam
+            if int(time_since_flush) % 10 == 0:  # Log every 10 seconds
+                logger.debug(f"Buffer timeout but insufficient duration: {duration_ms:.1f}ms < {min_duration_ms}ms - skipping")
+            return False
         
         return False
     
