@@ -19,6 +19,11 @@ else
     echo "⚠️  No .env file found - using system environment"
 fi
 
+# Stop existing processes first
+echo "⏹️ Stopping existing processes..."
+pm2 stop scrumbot-backend scrumbot-websocket scrumbot-chatbot 2>/dev/null || true
+pm2 delete scrumbot-backend scrumbot-websocket scrumbot-chatbot 2>/dev/null || true
+
 # Start PM2 processes using direct commands (proven to work)
 echo "🚀 Starting PM2 processes..."
 pm2 start --name scrumbot-backend --interpreter venv/bin/python start_backend.py --update-env
