@@ -1,9 +1,25 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { apiService } from '@/lib/api';
 
 const IntegrationsPage = () => {
-  const [integrations, setIntegrations] = useState([
+  const [integrations, setIntegrations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const fetchIntegrations = async () => {
+      try {
+        setLoading(true);
+        const response = await apiService.getIntegrations();
+        setIntegrations(response.data || []);
+        setError('');
+      } catch (err) {
+        console.error('Failed to fetch integrations:', err);
+        setError(`Failed to load integrations: ${err.message}`);
+        // Fallback to mock data
+        setIntegrations([
     {
       id: 1,
       name: 'Google Calendar',
@@ -114,12 +130,20 @@ const IntegrationsPage = () => {
       lastSync: null,
       category: 'Project Management'
     }
-  ]);
+        ]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchIntegrations();
+  }, []);
 
   // Calculate stats
-  const connectedCount = integrations.filter(i => i.status === 'Connected').length;
-  const availableCount = integrations.filter(i => i.status === 'Available').length;
-  const autoEnabledCount = integrations.filter(i => i.status === 'Connected' && i.features.includes('Auto-detect meetings')).length;
+  const integrationsArray = Array.isArray(integrations) ? integrations : [];
+  const connectedCount = integrationsArray.filter(i => i.status === 'Connected').length;
+  const availableCount = integrationsArray.filter(i => i.status === 'Available').length;
+  const autoEnabledCount = integrationsArray.filter(i => i.status === 'Connected' && i.features.includes('Auto-detect meetings')).length;
 
   const handleConfigure = (integrationId) => {
     console.log('Configure integration:', integrationId);
@@ -233,7 +257,23 @@ const IntegrationsPage = () => {
         <p className="text-gray-600 mt-1">Connect ScrumAI with your favourite tools and platforms</p>
       </div>
 
+      {/* Loading State */}
+      {loading && (
+        <div className="text-center py-12">
+          <div className="text-gray-400 text-lg mb-2">Loading integrations...</div>
+        </div>
+      )}
+
+      {/* Error State */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+          <div className="text-red-800 font-medium">Error Loading Integrations</div>
+          <div className="text-red-600 text-sm mt-1">{error}</div>
+        </div>
+      )}
+
       {/* Stats Cards */}
+      {!loading && (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="bg-white p-6 rounded-lg shadow-sm">
           <div className="text-2xl font-bold text-gray-900">{connectedCount}</div>
@@ -248,17 +288,20 @@ const IntegrationsPage = () => {
           <div className="text-gray-600 text-sm">Auto-enabled</div>
         </div>
       </div>
+      )}
 
       {/* Available Integrations Section */}
+      {!loading && (
       <div className="mb-8">
         <h2 className="text-xl font-semibold text-gray-900 mb-6">Available Integrations</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {integrations.map(integration => renderIntegrationCard(integration))}
+          {integrationsArray.map(integration => renderIntegrationCard(integration))}
         </div>
       </div>
+      )}
 
       {/* Empty state for when no integrations are available */}
-      {integrations.length === 0 && (
+      {!loading && !error && integrationsArray.length === 0 && (
         <div className="text-center py-12">
           <div className="text-gray-400 text-lg mb-2">No integrations available</div>
           <div className="text-gray-500">Check back later for new integrations</div>

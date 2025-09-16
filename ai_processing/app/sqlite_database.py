@@ -114,6 +114,25 @@ class SQLiteDatabase(DatabaseInterface):
                 )
             """)
 
+            # Create tasks table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS tasks (
+                    id TEXT PRIMARY KEY,
+                    meeting_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    description TEXT,
+                    assignee TEXT,
+                    due_date TEXT,
+                    priority TEXT DEFAULT 'medium',
+                    status TEXT DEFAULT 'pending',
+                    notion_page_id TEXT,
+                    slack_message_ts TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (meeting_id) REFERENCES meetings(id)
+                )
+            """)
+
             conn.commit()
 
     async def create_process(self, meeting_id: str) -> str:
@@ -639,6 +658,7 @@ class SQLiteDatabase(DatabaseInterface):
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
 
+                cursor.execute("DELETE FROM tasks")
                 cursor.execute("DELETE FROM participants")
                 cursor.execute("DELETE FROM transcript_chunks")
                 cursor.execute("DELETE FROM summary_processes")
@@ -651,6 +671,154 @@ class SQLiteDatabase(DatabaseInterface):
         except Exception as e:
             logger.error(f"Error clearing all data: {e}")
             return False
+
+    async def save_task(self, task_id: str, meeting_id: str, title: str, 
+                       description: str = None, assignee: str = None, 
+                       due_date: str = None, priority: str = 'medium', 
+                       status: str = 'pending') -> bool:
+        """Save a task to the database"""
+        try:
+            current_time = datetime.utcnow().isoformat()
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute("""
+                    INSERT OR REPLACE INTO tasks 
+                    (id, meeting_id, title, description, assignee, due_date, priority, status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (task_id, meeting_id, title, description, assignee, due_date, priority, status, current_time, current_time))
+                
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error saving task: {e}")
+            return False
+
+    async def get_all_tasks(self) -> List[Dict]:
+        """Get all tasks from database"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute("""
+                    SELECT id, meeting_id, title, description, assignee, due_date, 
+                           priority, status, notion_page_id, slack_message_ts, 
+                           created_at, updated_at
+                    FROM tasks 
+                    ORDER BY created_at DESC
+                """)
+                
+                tasks = cursor.fetchall()
+                return [
+                    {
+                        "id": task[0],
+                        "meeting_id": task[1],
+                        "title": task[2],
+                        "description": task[3],
+                        "assignee": task[4],
+                        "due_date": task[5],
+                        "priority": task[6],
+                        "status": task[7],
+                        "notion_page_id": task[8],
+                        "slack_message_ts": task[9],
+                        "created_at": task[10],
+                        "updated_at": task[11]
+                    }
+                    for task in tasks
+                ]
+        except Exception as e:
+            logger.error(f"Error getting all tasks: {e}")
+            return []
+
+    async def get_tasks_by_meeting(self, meeting_id: str) -> List[Dict]:
+        """Get tasks for a specific meeting"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute("""
+                    SELECT id, meeting_id, title, description, assignee, due_date, 
+                           priority, status, notion_page_id, slack_message_ts, 
+                           created_at, updated_at
+                    FROM tasks 
+                    WHERE meeting_id = ?
+                    ORDER BY created_at DESC
+                """, (meeting_id,))
+                
+                tasks = cursor.fetchall()
+                return [
+                    {
+                        "id": task[0],
+                        "meeting_id": task[1],
+                        "title": task[2],
+                        "description": task[3],
+                        "assignee": task[4],
+                        "due_date": task[5],
+                        "priority": task[6],
+                        "status": task[7],
+                        "notion_page_id": task[8],
+                        "slack_message_ts": task[9],
+                        "created_at": task[10],
+                        "updated_at": task[11]
+                    }
+                    for task in tasks
+                ]
+        except Exception as e:
+            logger.error(f"Error getting tasks by meeting: {e}")
+            return []
+
+    async def get_meeting_transcript(self, meeting_id: str) -> Optional[Dict]:
+        """Get full transcript data for a meeting"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Get meeting info
+                cursor.execute("""
+                    SELECT id, title, created_at, updated_at FROM meetings WHERE id = ?
+                """, (meeting_id,))
+                
+                meeting_data = cursor.fetchone()
+                if not meeting_data:
+                    return None
+
+                # Get transcript chunks
+                cursor.execute("""
+                    SELECT id, transcript, timestamp, summary, action_items, key_points
+                    FROM transcripts WHERE meeting_id = ? ORDER BY timestamp
+                """, (meeting_id,))
+
+                transcript_chunks = cursor.fetchall()
+
+                # Get participants
+                participants = await self.get_participants(meeting_id)
+
+                # Combine all transcript text
+                full_transcript = " ".join([chunk[1] for chunk in transcript_chunks])
+
+                return {
+                    "meeting_id": meeting_id,
+                    "title": meeting_data[1],
+                    "transcript_chunks": [
+                        {
+                            "id": chunk[0],
+                            "text": chunk[1],
+                            "timestamp": chunk[2],
+                            "speaker": "Unknown",
+                            "summary": chunk[3],
+                            "action_items": chunk[4],
+                            "key_points": chunk[5]
+                        }
+                        for chunk in transcript_chunks
+                    ],
+                    "full_transcript": full_transcript,
+                    "participants": [p["name"] for p in participants],
+                    "duration": "Unknown",
+                    "created_at": meeting_data[2]
+                }
+        except Exception as e:
+            logger.error(f"Error getting meeting transcript: {e}")
+            return None
 
     async def health_check(self) -> bool:
         """Check if database connection is healthy"""

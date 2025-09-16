@@ -14,8 +14,30 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+def load_shared_env():
+    """Load shared environment variables from /shared/.tidb.env"""
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(os.path.dirname(current_dir))
+    shared_env_path = os.path.join(project_root, 'shared', '.tidb.env')
+    
+    if os.path.exists(shared_env_path):
+        with open(shared_env_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    # Remove quotes if present
+                    value = value.strip('"\'')
+                    os.environ[key] = value
+        logger.info(f"Loaded shared environment from {shared_env_path}")
+    else:
+        logger.warning(f"Shared environment file not found: {shared_env_path}")
+
 class TiDBManager:
     def __init__(self):
+        # Load shared environment first
+        load_shared_env()
+        
         self.connection = None
         self.connection_string = os.getenv('TIDB_CONNECTION_STRING')
         if not self.connection_string:

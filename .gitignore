@@ -176,6 +176,11 @@ secrets.json
 **/*secret*
 **/*password*
 
+# Shared environment files
+shared/.tidb.env
+shared/.env*
+!shared/.env.example
+
 # SSL certificates (from scan)
 **/certifi/cacert.pem
 
@@ -288,6 +293,39 @@ ai-venv/
 __pycache__/
 *.pyc
 *.pyo
-*.pyd
+*.pyd# -
+---------------
+# Corrected Strategy Documents (Internal Use Only)
+# ----------------
+CORRECTED_OAUTH_IMPLEMENTATION_STRATEGY.md
+# Debug and test files
+ai_processing/pipeline_logs/
+logsfromserverandchrome.txt
+logsfromserverandchrome.log
+chrome_extension/test-audio-direct.html
+*.log
+*.jsonl
 
-integration/app/__pycache__
+# Test environment files (never commit)
+ai_processing/.env.test
+**/.env.test
+**/test.env
+test-meeting.wav
+*.wav
+test_*.py
+
+# ----------------
+# Hackathon cleanup - ignore temporary files
+# ----------------
+tidb-hackathon.txt
+llm.txt
+*.wav
+*.wav.txt
+logsfromserverandchrome.logs
+
+# Ignore remaining analysis documents
+AI_PROCESSING_INTEGRATION_TODOS.md
+TASK_CREATION_FIX.md
+DEPLOYMENT_CHECKLIST_JSON_FIX.md
+EC2_WEBSOCKET_TESTING_GUIDE.md
+integration/app/__pycache__/

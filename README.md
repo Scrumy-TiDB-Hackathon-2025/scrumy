@@ -46,6 +46,12 @@
 
 ScrumBot is an enhanced AI-powered meeting assistant built for the **TiDB Hackathon 2025**. It extends the excellent [Meetily](https://github.com/Zackriya-Solutions/meeting-minutes) project with new capabilities including TiDB Serverless integration, Chrome extension support, and Model Context Protocol (MCP) integration for seamless task management.
 
+## 🏆 Hackathon Submission
+- **Repository**: https://github.com/Scrumy-TiDB-Hackathon-2025/scrumy
+- **Demo Instructions**: [RUN_INSTRUCTIONS.md](RUN_INSTRUCTIONS.md)
+- **Features Overview**: [PROJECT_FEATURES.md](PROJECT_FEATURES.md)
+- **Submission Details**: [HACKATHON_SUBMISSION.md](HACKATHON_SUBMISSION.md)
+
 ## What's New in ScrumBot
 
 ### 🚀 **Chrome Extension Integration**
@@ -195,10 +201,36 @@ chmod +x build_whisper.sh
 ./build_whisper.sh
 ```
 
-### 2. Configure TiDB
+### 2. Configure Environment
 ```bash
-# Set your TiDB connection string
-export TIDB_CONNECTION_STRING="mysql://username:password@gateway01.us-west-2.prod.aws.tidbcloud.com:4000/test"
+# Copy environment template
+cp shared/.env.example shared/.tidb.env
+
+# Edit shared/.tidb.env with your credentials:
+# - TiDB connection string (required)
+# - Integration platform tokens (optional)
+# - AI provider API keys (optional)
+```
+
+**Required Configuration:**
+```bash
+# TiDB Serverless (Required)
+TIDB_CONNECTION_STRING="mysql://username:password@gateway01.us-west-2.prod.aws.tidbcloud.com:4000/test"
+
+# AI Provider (Choose one)
+GROQ_API_KEY="your_groq_api_key"  # Free tier recommended
+```
+
+**Optional Integrations:**
+```bash
+# Task Management Platforms
+NOTION_TOKEN="secret_your_notion_integration_token"
+NOTION_DATABASE_ID="your_database_id_here"
+CLICKUP_TOKEN="pk_your_clickup_api_token"
+CLICKUP_LIST_ID="your_list_id_here"
+
+# Communication
+SLACK_BOT_TOKEN="xoxb-your-slack-bot-token"
 ```
 
 ### 3. Start Services

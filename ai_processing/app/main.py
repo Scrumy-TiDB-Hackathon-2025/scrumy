@@ -7,7 +7,7 @@ import uvicorn
 from typing import Optional, List, Dict, Any
 import logging
 from dotenv import load_dotenv
-from app.db import DatabaseManager
+from app.database_interface import DatabaseFactory
 from app.database_interface import DatabaseFactory, validate_database_config
 import json
 from threading import Lock
@@ -78,10 +78,114 @@ app.add_middleware(
 # Include tools router
 app.include_router(tools_router, prefix="/api/v1", tags=["tools"])
 
+# Include frontend endpoints
+try:
+    from app.frontend_endpoints import router as frontend_router
+    app.include_router(frontend_router, tags=["frontend"])
+    logger.info(f"✅ Frontend router included with {len(frontend_router.routes)} routes")
+except Exception as e:
+    logger.error(f"❌ Failed to include frontend router: {e}")
+    logger.error(f"Frontend endpoints will not be available")
+    import traceback
+    traceback.print_exc()
+
 # Lab-required endpoints
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+@app.get("/debug/database")
+async def debug_database():
+    """Debug endpoint to check which database is being used"""
+    try:
+        from app.database_interface import get_database_status
+        import os
+        
+        # Get database instance info
+        db_type = type(db).__name__
+        db_status = get_database_status()
+        
+        # Test database connection
+        health = await db.health_check()
+        
+        return {
+            "database_class": db_type,
+            "environment_config": db_status,
+            "connection_healthy": health,
+            "sqlite_file_exists": os.path.exists("meeting_minutes.db"),
+            "env_database_type": os.getenv("DATABASE_TYPE", "not_set"),
+            "tidb_connection_string": bool(os.getenv("TIDB_CONNECTION_STRING"))
+        }
+    except Exception as e:
+        return {
+            "error": str(e),
+            "database_class": type(db).__name__ if 'db' in globals() else "unknown"
+        }
+
+@app.get("/recording-status")
+async def get_recording_status(meeting_id: Optional[str] = None):
+    """Get current recording status for frontend auto-refresh control
+    
+    Args:
+        meeting_id: Optional meeting ID to check for specific meeting recording status
+    """
+    try:
+        from app.websocket_server import get_websocket_manager
+        
+        websocket_manager = get_websocket_manager()
+        active_sessions = len(websocket_manager.meeting_sessions)
+        active_connections = len(websocket_manager.active_connections)
+        
+        # Check if any sessions are active (created in last 10 minutes)
+        from datetime import datetime, timedelta
+        now = datetime.now()
+        recent_sessions = []
+        
+        for session_id, session in websocket_manager.meeting_sessions.items():
+            time_diff = now - session.start_time
+            
+            # Session is active if:
+            # 1. Started within 10 minutes, OR
+            # 2. Disconnected but within 5-minute grace period
+            is_active = time_diff < timedelta(minutes=10)
+            if hasattr(session, 'last_disconnect_time') and session.last_disconnect_time:
+                disconnect_diff = now - session.last_disconnect_time
+                is_active = disconnect_diff < timedelta(minutes=5)
+            
+            if is_active:
+                status = "disconnected" if hasattr(session, 'last_disconnect_time') and session.last_disconnect_time else "active"
+                recent_sessions.append({
+                    "meeting_id": session_id,
+                    "platform": session.platform,
+                    "duration_minutes": int(time_diff.total_seconds() / 60),
+                    "participants": len(session.participants),
+                    "status": status
+                })
+        
+        # If specific meeting_id provided, only return true if that meeting is being recorded
+        if meeting_id:
+            is_recording = any(session["meeting_id"] == meeting_id for session in recent_sessions)
+        else:
+            # Global recording status - any active sessions
+            is_recording = len(recent_sessions) > 0
+        
+        return {
+            "is_recording": is_recording,
+            "active_sessions": len(recent_sessions),
+            "active_connections": active_connections,
+            "recent_sessions": recent_sessions,
+            "checked_meeting_id": meeting_id
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting recording status: {e}")
+        return {
+            "is_recording": False,
+            "active_sessions": 0,
+            "active_connections": 0,
+            "recent_sessions": [],
+            "checked_meeting_id": meeting_id
+        }
 
 def preprocess_audio_for_whisper(input_path: str, output_path: str) -> bool:
     """
@@ -258,44 +362,8 @@ async def transcribe(file: UploadFile = File(...)):
         logger.error(f"Transcription error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
-# Initialize database based on environment configuration
-def create_database():
-    """Create database instance based on environment configuration"""
-    db_type = os.getenv('DATABASE_TYPE', 'tidb').lower()
-
-    if db_type == 'tidb':
-        # TiDB configuration from environment
-        config = {
-            "type": "tidb",
-            "connection": {
-                "host": os.getenv('TIDB_HOST', 'localhost'),
-                "port": int(os.getenv('TIDB_PORT', 4000)),
-                "user": os.getenv('TIDB_USER'),
-                "password": os.getenv('TIDB_PASSWORD'),
-                "database": os.getenv('TIDB_DATABASE', 'test'),
-                "ssl_mode": os.getenv('TIDB_SSL_MODE', 'REQUIRED')
-            }
-        }
-    else:
-        # SQLite configuration (default for development)
-        config = {
-            "type": "sqlite",
-            "connection": {
-                "db_path": os.getenv('SQLITE_DB_PATH', 'meeting_minutes.db')
-            }
-        }
-
-    if validate_database_config(config):
-        logger.info(f"Initializing {db_type.upper()} database")
-        return DatabaseFactory.create_from_config(config)
-    else:
-        logger.error("Invalid database configuration, falling back to SQLite")
-        fallback_config = {"type": "sqlite", "connection": {"db_path": "meeting_minutes.db"}}
-        return DatabaseFactory.create_from_config(fallback_config)
-
 # Global database manager instance for meeting management endpoints
-# db = DatabaseManager()
-db = DatabaseFactory.create_database(db_type='tidb')
+db = DatabaseFactory.create_from_env()
 
 # New Pydantic models for meeting management with participant support
 class Participant(BaseModel):
@@ -332,6 +400,9 @@ class DeleteMeetingRequest(BaseModel):
 class SaveTranscriptRequest(BaseModel):
     meeting_title: str
     transcripts: List[Transcript]
+    meeting_id: Optional[str] = None
+    platform: Optional[str] = None
+    participants: Optional[List[Dict]] = None
 
 class SaveModelConfigRequest(BaseModel):
     provider: str
@@ -354,8 +425,8 @@ class SummaryProcessor:
     """Handles the processing of summaries in a thread-safe way"""
     def __init__(self):
         try:
-            # Change this line to include db_type
-            self.db = DatabaseFactory.create_database(db_type='tidb')
+            # Use environment-based database configuration
+            self.db = DatabaseFactory.create_from_env()
             logger.info("Initializing SummaryProcessor components")
             self.transcript_processor = TranscriptProcessor()
             logger.info("SummaryProcessor initialized successfully (core components)")
@@ -649,19 +720,30 @@ async def get_summary(meeting_id: str):
         )
 
 @app.post("/save-transcript")
-async def save_transcript(request: SaveTranscriptRequest):
-    """Save transcript segments for a meeting without processing"""
+async def save_transcript(request: SaveTranscriptRequest, background_tasks: BackgroundTasks):
+    """Save transcript segments for a meeting and extract tasks"""
     try:
-        logger.info(f"Received save-transcript request for meeting: {request.meeting_title}")
-        logger.info(f"Number of transcripts to save: {len(request.transcripts)}")
-
-        # Generate a unique meeting ID using UUID
-        meeting_id = f"meeting-{uuid.uuid4()}"
+        logger.info(f"🚀 [DEBUG] save-transcript called with:")
+        logger.info(f"  - meeting_title: {request.meeting_title}")
+        logger.info(f"  - transcripts count: {len(request.transcripts)}")
+        logger.info(f"  - provided meeting_id: {getattr(request, 'meeting_id', 'NOT PROVIDED')}")
+        logger.info(f"  - platform: {getattr(request, 'platform', 'NOT PROVIDED')}")
+        logger.info(f"  - participants: {getattr(request, 'participants', 'NOT PROVIDED')}")
+        
+        # Use provided meeting_id if available, otherwise generate new UUID
+        provided_meeting_id = getattr(request, 'meeting_id', None)
+        meeting_id = provided_meeting_id or f"meeting-{uuid.uuid4()}"
+        
+        logger.info(f"📝 [DEBUG] Final meeting_id decision:")
+        logger.info(f"  - provided_meeting_id: {provided_meeting_id}")
+        logger.info(f"  - final meeting_id: {meeting_id}")
+        logger.info(f"  - was_generated: {provided_meeting_id is None}")
 
         # Save the meeting
         await db.save_meeting(meeting_id, request.meeting_title)
 
         # Save each transcript segment
+        full_transcript = ""
         for transcript in request.transcripts:
             await db.save_meeting_transcript(
                 meeting_id=meeting_id,
@@ -671,12 +753,65 @@ async def save_transcript(request: SaveTranscriptRequest):
                 action_items="",
                 key_points=""
             )
+            full_transcript += transcript.text + " "
 
-        logger.info("Transcripts saved successfully")
+        # Save participants if provided
+        if hasattr(request, 'participants') and request.participants:
+            await db.save_participants_batch(meeting_id, request.participants)
+
+        # Extract and save tasks in background
+        if full_transcript.strip():
+            background_tasks.add_task(
+                extract_and_save_tasks,
+                meeting_id,
+                full_transcript.strip(),
+                request.meeting_title
+            )
+
+        logger.info(f"✅ [DEBUG] Transcripts saved successfully with meeting_id: {meeting_id}")
         return {"status": "success", "message": "Transcript saved successfully", "meeting_id": meeting_id}
     except Exception as e:
         logger.error(f"Error saving transcript: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+async def extract_and_save_tasks(meeting_id: str, transcript: str, meeting_title: str):
+    """Background task to extract and save tasks from transcript"""
+    try:
+        logger.info(f"Starting task extraction for meeting {meeting_id}")
+        
+        # Initialize task extractor
+        ai_processor = AIProcessor()
+        task_extractor = TaskExtractor(ai_processor)
+        
+        # Extract tasks
+        meeting_context = {
+            "meeting_id": meeting_id,
+            "title": meeting_title
+        }
+        
+        tasks_result = await task_extractor.extract_comprehensive_tasks(transcript, meeting_context)
+        
+        if tasks_result and tasks_result.get('tasks'):
+            # Save each task to database
+            for task in tasks_result['tasks']:
+                task_id = f"task-{uuid.uuid4()}"
+                await db.save_task(
+                    task_id=task_id,
+                    meeting_id=meeting_id,
+                    title=task.get('title', 'Untitled Task'),
+                    description=task.get('description', ''),
+                    assignee=task.get('assignee', 'Unassigned'),
+                    priority=task.get('priority', 'medium'),
+                    status='pending'
+                )
+            
+            logger.info(f"Successfully extracted and saved {len(tasks_result['tasks'])} tasks for meeting {meeting_id}")
+        else:
+            logger.info(f"No tasks extracted for meeting {meeting_id}")
+            
+    except Exception as e:
+        logger.error(f"Error extracting tasks for meeting {meeting_id}: {e}")
+        # Don't raise exception to avoid breaking the main flow
 
 @app.get("/get-model-config")
 async def get_model_config():
@@ -837,7 +972,7 @@ async def generate_summary(request: GenerateSummaryRequest):
                     'total_participants': len(summary.get('participants', [])),
                     'participation_balance': summary.get('participation_balance', 'balanced')
                 },
-                'summary_generated_at': datetime.now().isoformat()
+                'summary_generated_at': datetime.datetime.now().isoformat()
             }
         }
 
@@ -875,7 +1010,7 @@ async def extract_tasks(request: ExtractTasksRequest):
                         'category': task.get('category', 'action_item'),
                         'dependencies': task.get('dependencies', []),
                         'business_impact': task.get('priority', 'medium'),
-                        'created_at': datetime.now().isoformat()
+                        'created_at': datetime.datetime.now().isoformat()
                     })
 
         return {
@@ -891,7 +1026,7 @@ async def extract_tasks(request: ExtractTasksRequest):
                 'extraction_metadata': {
                     'explicit_tasks_found': len(formatted_tasks),
                     'implicit_tasks_found': 0,
-                    'extracted_at': datetime.now().isoformat()
+                    'extracted_at': datetime.datetime.now().isoformat()
                 }
             }
         }
@@ -899,6 +1034,90 @@ async def extract_tasks(request: ExtractTasksRequest):
     except Exception as e:
         logger.error(f"Task extraction error: {e}")
         raise HTTPException(status_code=500, detail=f"Task extraction failed: {str(e)}")
+
+@app.post("/extract-tasks-comprehensive")
+async def extract_tasks_comprehensive(request: ExtractTasksRequest):
+    """Extract tasks with comprehensive database storage and integration filtering - NO REDUNDANCY"""
+    try:
+        from app.task_extractor import TaskExtractor
+        from app.database_task_manager import DatabaseTaskManager
+        
+        # Step 1: AI extraction (REUSES existing TaskExtractor - no redundancy)
+        ai_processor = AIProcessor()
+        task_extractor = TaskExtractor(ai_processor)
+        
+        meeting_id = request.meeting_context.get('meeting_id', f"meeting_{int(datetime.datetime.now().timestamp())}") if request.meeting_context else f"meeting_{int(datetime.datetime.now().timestamp())}"
+        
+        # Extract tasks using existing extractor (no duplicate code)
+        ai_result = await task_extractor.extract_comprehensive_tasks(
+            request.transcript,
+            request.meeting_context or {}
+        )
+        
+        if not ai_result or 'tasks' not in ai_result:
+            return {
+                "status": "error",
+                "error": "AI extraction failed",
+                "data": {"ai_extraction": {"tasks": []}, "database_storage": {"stored_tasks": []}, "integration_tasks": []}
+            }
+        
+        # Step 2: Database storage + integration filtering (NEW functionality)
+        db_manager = DatabaseTaskManager()
+        
+        # Store all AI fields in database (comprehensive)
+        storage_result = db_manager.store_comprehensive_tasks(
+            ai_result['tasks'], 
+            meeting_id
+        )
+        
+        # Get filtered tasks for integration platforms (only supported fields)
+        integration_tasks = db_manager.get_integration_tasks(
+            storage_result["stored_tasks"], 
+            platform="integration"
+        )
+        
+        # Get field mapping analysis
+        field_mapping = db_manager.show_field_mapping(storage_result["stored_tasks"])
+        
+        return {
+            "status": "success",
+            "data": {
+                # Original AI extraction results (all fields)
+                "ai_extraction": {"tasks": ai_result['tasks']},
+                
+                # Database storage results (all fields preserved)
+                "database_storage": storage_result,
+                
+                # Integration-ready tasks (filtered to supported fields only)
+                "integration_tasks": integration_tasks,
+                
+                # Field mapping analysis
+                "field_analysis": field_mapping,
+                
+                # Summary
+                "summary": {
+                    "total_ai_tasks": len(ai_result['tasks']),
+                    "database_fields_stored": len(storage_result["stored_tasks"][0].keys()) if storage_result["stored_tasks"] else 0,
+                    "integration_fields_available": len(integration_tasks[0].keys()) if integration_tasks else 0,
+                    "meeting_id": meeting_id,
+                    "architecture": "Two-layer: Database (all fields) + Integration (filtered fields)"
+                }
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Comprehensive task extraction error: {e}")
+        return {
+            "status": "error",
+            "error": f"Comprehensive task extraction failed: {str(e)}",
+            "data": {
+                "ai_extraction": {"tasks": []},
+                "database_storage": {"stored_tasks": []},
+                "integration_tasks": [],
+                "field_analysis": {"available_fields": []},
+                "summary": {"total_ai_tasks": 0}
+            }
+        }
 
 @app.post("/process-transcript-with-tools")
 async def process_transcript_with_tools(request: ProcessTranscriptWithToolsRequest):
@@ -918,7 +1137,7 @@ async def process_transcript_with_tools(request: ProcessTranscriptWithToolsReque
             meeting_context
         )
 
-        # Extract participants for integration
+        # Extract participants for response formatting
         participants = []
         if 'speakers' in result:
             participants = [
@@ -927,21 +1146,9 @@ async def process_transcript_with_tools(request: ProcessTranscriptWithToolsReque
                 if isinstance(speaker, dict)
             ]
 
-        # Notify integration systems (async, non-blocking)
-        try:
-            asyncio.create_task(notify_meeting_processed(
-                meeting_id=request.meeting_id,
-                meeting_title=f"Meeting {request.meeting_id}",
-                platform=request.platform,
-                participants=participants,
-                transcript=request.text,
-                summary_data=result.get('summary', {}),
-                tasks_data=result.get('tasks', []),
-                speakers_data=result.get('speakers', [])
-            ))
-            logger.info(f"Triggered integration processing for meeting {request.meeting_id}")
-        except Exception as integration_error:
-            logger.warning(f"Integration notification failed: {integration_error}")
+        # Skip integration notification - already handled by IntegratedAIProcessor
+        # This prevents duplicate task creation from multiple pathways
+        logger.info(f"Skipping integration notification for {request.meeting_id} - handled by IntegratedAIProcessor to prevent duplicates")
 
         # Format response to match Chrome extension expectations
         return {
@@ -951,7 +1158,7 @@ async def process_transcript_with_tools(request: ProcessTranscriptWithToolsReque
             'actions_taken': result.get('tasks', []),
             'speakers': result.get('speakers', []),
             'tools_used': 3,  # Speaker ID, Summary, Tasks
-            'processed_at': datetime.now().isoformat()
+            'processed_at': datetime.datetime.now().isoformat()
         }
 
     except Exception as e:

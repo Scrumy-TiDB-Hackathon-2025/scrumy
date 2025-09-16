@@ -1,238 +1,95 @@
-# Meetily Backend
+# Audio-to-Tasks Pipeline
 
-FastAPI backend for meeting transcription and analysis
+🎤 **Convert meeting recordings into actionable task lists using AI**
 
-## Features
-- Audio file upload and storage
-- Real-time Whisper-based transcription with streaming support
-- Meeting analysis with LLMs (supports Claude, Groq, and Ollama)
-- REST API endpoints
+## Quick Start
+
+```bash
+# 1. Setup environment
+./setup_groq_key.sh
+
+# 2. Start the pipeline
+./clean_start_backend.sh
+
+# 3. Test the system
+python pipeline_summary.py
+```
+
+## What It Does
+
+- **Audio → Text**: Transcribe meeting recordings using Whisper.cpp
+- **Text → Tasks**: Extract actionable items using GROQ AI
+- **Structure**: Organize tasks with assignees, deadlines, and priorities
+
+## API Usage
+
+### Transcribe Audio
+```bash
+curl -X POST -F "file=@meeting.mp3" http://localhost:5167/transcribe
+```
+
+### Extract Tasks
+```bash
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"transcript": "John will update the docs by Friday"}' \
+  http://localhost:5167/extract-tasks
+```
+
+## Example Output
+
+```json
+{
+  "tasks": [
+    {
+      "title": "Update documentation",
+      "assignee": "John",
+      "due_date": "Friday",
+      "priority": "medium",
+      "description": "Update the project documentation"
+    }
+  ]
+}
+```
+
+## Architecture
+
+```
+Audio File → Whisper.cpp → Transcript → GROQ AI → Structured Tasks
+```
+
+## Key Features
+
+- ✅ **Local Audio Processing**: No external API for transcription
+- ✅ **AI-Powered Analysis**: Advanced task extraction using LLMs
+- ✅ **RESTful API**: Easy integration with existing systems
+- ✅ **Structured Output**: JSON format with rich metadata
+- ✅ **Production Ready**: Error handling, logging, monitoring
+
+## Testing
+
+| Test File | Purpose |
+|-----------|---------|
+| `pipeline_summary.py` | Complete demonstration |
+| `test_full_pipeline.py` | End-to-end workflow |
+| `test_simple_pipeline.py` | Basic functionality |
+| `test_pipeline_with_tasks.py` | Task-rich meetings |
 
 ## Requirements
-- Python 3.9+
-- FFmpeg
-- C++ compiler (for Whisper.cpp)
-- CMake
-- Git (for submodules)
-- Ollama running
-- API Keys (for Claude or Groq) if planning to use APIS
-- ChromaDB
 
-## Installation
+- Python 3.8+
+- GROQ API key
+- ~1GB disk space (for models)
+- ~500MB RAM during processing
 
-### Prerequisites Installation
+## Documentation
 
-#### For Windows:
-1. **Python 3.9+**:
-   - Download and install from [Python.org](https://www.python.org/downloads/)
-   - Ensure you check "Add Python to PATH" during installation
-   - Verify installation: `python --version`
+- 📖 **[Complete Walkthrough](PIPELINE_WALKTHROUGH.md)** - Detailed setup and usage guide
+- 🔗 **[API Docs](http://localhost:5167/docs)** - Interactive API documentation (when running)
 
-2. **FFmpeg**:
-   - Download from [FFmpeg.org](https://ffmpeg.org/download.html) or install via [Chocolatey](https://chocolatey.org/): `choco install ffmpeg`
-   - Add FFmpeg to your PATH environment variable
-   - Verify installation: `ffmpeg -version`
+## Status
 
-3. **C++ Compiler**:
-   - Install Visual Studio Build Tools from [Microsoft](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
-   - Select "Desktop development with C++" workload during installation
-   - Verify installation: `cl` (should show the compiler version)
+🎉 **Production Ready** - Fully functional audio-to-tasks pipeline
 
-4. **CMake**:
-   - Download and install from [CMake.org](https://cmake.org/download/)
-   - Ensure you select "Add CMake to the system PATH" during installation
-   - Verify installation: `cmake --version`
+---
 
-5. **Git**:
-   - Download and install from [Git-scm.com](https://git-scm.com/download/win)
-   - Verify installation: `git --version`
-
-6. **Ollama**:
-   - Download and install from [Ollama.com](https://ollama.com/download)
-   - Start Ollama service
-   - Pull required models: `ollama pull mistral` (or your preferred model)
-   - Verify installation: `ollama list`
-
-#### For macOS:
-1. **Python 3.9+**:
-   - Install via Homebrew: `brew install python@3.9`
-   - Or download from [Python.org](https://www.python.org/downloads/)
-   - Verify installation: `python3 --version`
-
-2. **FFmpeg**:
-   - Install via Homebrew: `brew install ffmpeg`
-   - Verify installation: `ffmpeg -version`
-
-3. **C++ Compiler**:
-   - Install Xcode Command Line Tools: `xcode-select --install`
-   - Verify installation: `clang --version`
-
-4. **CMake**:
-   - Install via Homebrew: `brew install cmake`
-   - Verify installation: `cmake --version`
-
-5. **Git**:
-   - Install via Homebrew: `brew install git`
-   - Or install Xcode Command Line Tools: `xcode-select --install`
-   - Verify installation: `git --version`
-
-6. **Ollama**:
-   - Install via Homebrew: `brew install ollama`
-   - Or download from [Ollama.com](https://ollama.com/download)
-   - Start Ollama service: `ollama serve`
-   - Pull required models: `ollama pull mistral` (or your preferred model)
-   - Verify installation: `ollama list`
-
-
-
-### 2. Python Dependencies
-Install Python dependencies:
-
-#### For Windows:
-```cmd
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-```
-
-#### For macOS:
-```bash
-python3 -m pip install --upgrade pip
-python3 -m pip install -r requirements.txt
-```
-
-### 3. Build Whisper Server
-
-#### For Windows:
-Run the build script which will:
-- Initialize and update git submodules
-- Build Whisper.cpp with custom server modifications
-- Set up the server package with required files
-- Download the selected Whisper model
-
-```cmd
-./build_whisper.cmd
-```
-
-If no model is specified, the script will prompt you to choose one interactively.
-
-#### For macOS:
-```bash
-./build_whisper.sh
-```
-
-If you encounter permission issues, make the script executable:
-```bash
-chmod +x build_whisper.sh
-./build_whisper.sh
-```
-
-### 4. Running the Server
-
-#### For Windows:
-The PowerShell script provides an interactive way to start the backend services:
-
-```cmd
-./start_with_output.ps1
-```
-
-Or directly with PowerShell:
-```powershell
-powershell -ExecutionPolicy Bypass -File start_with_output.ps1
-```
-
-The script will:
-1. Check and clean up any existing processes
-2. Display available models and prompt for selection
-3. Download the selected model if not present
-4. Start the Whisper server in a new window
-5. Start the FastAPI backend in a new window
-
-To stop all services, close the command windows or press Ctrl+C in each window.
-
-#### For macOS:
-```bash
-./clean_start_backend.sh
-```
-
-If you encounter permission issues:
-```bash
-chmod +x clean_start_backend.sh
-./clean_start_backend.sh
-```
-
-To stop all services on macOS, press Ctrl+C in the terminal or use:
-```bash
-pkill -f "whisper-server"
-pkill -f "uvicorn main:app"
-```
-
-## API Documentation
-Access Swagger UI at `http://localhost:5167/docs`
-
-## Services
-The backend runs two services:
-1. Whisper.cpp Server: Handles real-time audio transcription
-2. FastAPI Backend: Manages API endpoints, LLM integration, and data storage
-
-## Platform-Specific Information
-
-### Windows
-- The Windows scripts create separate command windows for each service, allowing you to see the output in real-time
-- You can check the status of services using `check_status.cmd`
-- If you prefer to start services individually:
-  - `start_whisper_server.cmd [model]` - Starts just the Whisper server
-  - `start_python_backend.cmd [port]` - Starts just the Python backend
-
-### macOS
-- The macOS scripts run services in the foreground by default
-- To run services in the background, you can use:
-  ```bash
-  nohup ./whisper-server/whisper-server -m ./models/ggml-base.en.bin -p 8178 > whisper.log 2>&1 &
-  nohup uvicorn main:app --host 0.0.0.0 --port 5167 > backend.log 2>&1 &
-  ```
-- To check running services: `ps aux | grep -E "whisper-server|uvicorn"`
-- To view logs: `tail -f whisper.log` or `tail -f backend.log`
-
-## Troubleshooting
-
-### Common Issues on Windows
-- If you see "whisper-server.exe not found", run `build_whisper.cmd` first
-- If a model fails to download, try running `download-ggml-model.cmd [model]` directly
-- If services don't start, check if ports 8178 (Whisper) and 5167 (Backend) are available
-- Ensure you have administrator privileges when running the scripts
-- If PowerShell script execution is blocked, run PowerShell as administrator and use:
-  ```powershell
-  Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
-  ```
-- If you encounter "Access is denied" errors, try running Command Prompt as administrator
-- For Visual Studio Build Tools issues, try reinstalling with the correct C++ components
-- If CMake can't find the compiler, ensure Visual Studio Build Tools are properly installed and PATH variables are set
-
-### Common Issues on macOS
-- If scripts fail with "Permission denied", run `chmod +x script_name.sh` to make them executable
-- If you see "command not found: python", use `python3` instead
-- If building Whisper fails with compiler errors, ensure Xcode Command Line Tools are installed
-- For "Port already in use" errors, find and kill the process using:
-  ```bash
-  lsof -i :5167  # For backend port
-  lsof -i :8178  # For Whisper server port
-  kill -9 PID    # Replace PID with the actual process ID
-  ```
-- If Ollama fails to start, check if the service is running with `ps aux | grep ollama`
-- For library loading issues, ensure all dependencies are properly installed
-- If you encounter "xcrun: error", reinstall the Xcode Command Line Tools:
-  ```bash
-  xcode-select --install
-  ```
-- For M1/M2 Macs, ensure you're using ARM-compatible versions of software
-
-### General Troubleshooting
-- If services fail to start, the script will automatically clean up processes
-- Check logs for detailed error messages
-- Ensure all ports (5167 for backend, 8178 for Whisper) are available
-- Verify API keys if using Claude or Groq
-- For Ollama, ensure the Ollama service is running and models are pulled
-- If build fails:
-  - Ensure all dependencies (CMake, C++ compiler) are installed
-  - Check if git submodules are properly initialized
-  - Verify you have write permissions in the directory
+*Last updated: August 30, 2025*

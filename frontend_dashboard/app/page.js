@@ -5,108 +5,120 @@ import ChatSection from '@/components/ChatSection';
 import MeetingCard from '@/components/MeetingCard';
 import { useState, useEffect } from 'react';
 
+import { config } from '@/lib/config';
+import { apiService } from '@/lib/api';
+
 export default function Dashboard() {
   const [health, setHealth] = useState('Checking...');
   const [meetings, setMeetings] = useState([]);
-  const [backendUrl] = useState(process.env.NEXT_PUBLIC_API_URL || 'https://b5462b7bbb65.ngrok-free.app');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingInfo, setRecordingInfo] = useState(null);
 
-  // Enhanced fetch function with ngrok support
-  const apiCall = async (endpoint) => {
-    const url = `${backendUrl}${endpoint}`;
+  const fetchData = async (forceRefresh = false) => {
+    setLoading(true);
 
+    // Check backend health and recording status
     try {
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true', // Skip ngrok warning
-        },
-        mode: 'cors',
-        credentials: 'omit', // Don't send cookies
+      const healthData = await apiService.checkHealth();
+      setHealth(healthData.status === 'healthy' ? 'healthy' : 'unhealthy');
+      
+      // Check recording status for smart refresh
+      try {
+        const recordingResponse = await fetch(`${config.apiUrl}/recording-status`);
+        if (recordingResponse.ok) {
+          const recordingData = await recordingResponse.json();
+          // Only set recording true if there are actual active sessions
+          const wasRecording = isRecording;
+          const nowRecording = recordingData.is_recording && recordingData.active_sessions > 0;
+          setIsRecording(nowRecording);
+          setRecordingInfo(recordingData);
+          
+          // Clear cache if recording status changed
+          if (wasRecording !== nowRecording) {
+            apiService.api.clearCache('meetings');
+          }
+        }
+      } catch (recordingErr) {
+        console.warn('Recording status check failed:', recordingErr);
+        setIsRecording(false);
+      }
+    } catch (err) {
+      console.error('Health check failed:', err);
+      setHealth('Offline');
+      setError(`Health check failed: ${err.message}`);
+      setIsRecording(false);
+    }
+
+    // Get meetings with cache control
+    try {
+      const meetingsData = await apiService.getMeetings({ 
+        skipCache: forceRefresh || isRecording 
       });
 
-      // Check if response is ok
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      // Check if response is actually JSON
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        // If we get HTML instead of JSON, it might be ngrok warning
-        const text = await response.text();
-        if (text.includes('ngrok')) {
-          throw new Error('ngrok warning page detected - please visit the API URL directly first');
-        }
-        throw new Error(`Expected JSON but received: ${contentType}`);
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error(`API call failed for ${endpoint}:`, error);
-      throw error;
-    }
-  };
-
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-
-      // Check backend health
-      try {
-        const healthData = await apiCall('/health');
-        setHealth(healthData.status === 'healthy' ? 'healthy' : 'unhealthy');
-      } catch (err) {
-        console.error('Health check failed:', err);
-        setHealth('Offline');
-        setError(`Health check failed: ${err.message}`);
-      }
-
-      // Get meetings
-      try {
-        const meetingsData = await apiCall('/get-meetings');
-
-        // Handle the response structure
-        if (Array.isArray(meetingsData)) {
-          setMeetings(meetingsData);
-        } else if (meetingsData.meetings && Array.isArray(meetingsData.meetings)) {
-          setMeetings(meetingsData.meetings);
-        } else {
-          console.warn('Unexpected meetings response format:', meetingsData);
-          setMeetings([]);
-        }
-
-        // Clear error if meetings fetch succeeded
-        if (error.includes('Health check failed')) {
-          setError('');
-        }
-      } catch (err) {
-        console.error('Failed to fetch meetings:', err);
-        setError(`API Error: ${err.message}`);
+      // Handle the response structure
+      if (Array.isArray(meetingsData)) {
+        setMeetings(meetingsData);
+      } else if (meetingsData.data?.meetings && Array.isArray(meetingsData.data.meetings)) {
+        setMeetings(meetingsData.data.meetings);
+      } else if (meetingsData.meetings && Array.isArray(meetingsData.meetings)) {
+        setMeetings(meetingsData.meetings);
+      } else {
+        console.warn('Unexpected meetings response format:', meetingsData);
         setMeetings([]);
       }
 
-      setLoading(false);
-    };
+      // Clear error if meetings fetch succeeded
+      if (error) {
+        setError('');
+      }
+    } catch (err) {
+      console.error('Failed to fetch meetings:', err);
+      setError(`API Error: ${err.message}`);
+      setMeetings([]);
+    }
 
+    setLoading(false);
+  };
+
+  useEffect(() => {
     fetchData();
 
-    // Refresh every 30 seconds
-    const interval = setInterval(fetchData, 30000);
+    // Smart refresh: 15s when recording, 60s when idle  
+    const refreshInterval = isRecording ? 15000 : 60000; // 15s if recording, 1min otherwise
+    const interval = setInterval(() => fetchData(false), refreshInterval);
     return () => clearInterval(interval);
-  }, [backendUrl, error]);
+  }, [isRecording]);
 
   return (
     <div className="flex h-full bg-gray-50">
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto">
         <div className="p-6">
-          <h1 className="text-2xl font-bold text-gray-900 mb-6">
-            ScrumBot Dashboard
-          </h1>
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="text-2xl font-bold text-gray-900">
+              ScrumBot Dashboard
+            </h1>
+            <div className="flex items-center gap-3">
+              {isRecording && recordingInfo && recordingInfo.active_sessions > 0 && (
+                <div className="flex items-center gap-2 text-red-600 text-sm font-medium" title={`Active recording sessions: ${recordingInfo.recent_sessions?.map(s => s.meeting_id).join(', ') || 'Unknown'}`}>
+                  <div className="w-2 h-2 bg-red-600 rounded-full animate-pulse"></div>
+                  <span>Live Recording ({recordingInfo.active_sessions} session{recordingInfo.active_sessions !== 1 ? 's' : ''})</span>
+                </div>
+              )}
+              <button
+                onClick={() => {
+                  setLoading(true);
+                  fetchData(true); // Force refresh
+                }}
+                disabled={loading}
+                className="px-3 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+              >
+                {loading ? 'Refreshing...' : 'Refresh'}
+              </button>
+            </div>
+          </div>
 
           <div className="space-y-6">
             <CalendarSection />
@@ -135,7 +147,7 @@ export default function Dashboard() {
               </div>
               <div className="flex flex-wrap gap-3 text-sm">
                 <a
-                  href={backendUrl}
+                  href={config.apiUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-blue-600 hover:text-blue-800 font-medium"
@@ -156,14 +168,15 @@ export default function Dashboard() {
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                 <h3 className="text-sm font-semibold text-yellow-800 mb-2">🔧 Debug Information</h3>
                 <div className="text-sm text-yellow-700 space-y-1">
-                  <p><strong>Backend URL:</strong> {backendUrl}</p>
+                  <p><strong>Backend URL:</strong> {config.apiUrl}</p>
+                  <p><strong>Environment:</strong> {config.environment}</p>
                   <p><strong>Error:</strong> {error}</p>
                   <p><strong>Health Status:</strong> {health}</p>
                   <p><strong>Meetings Count:</strong> {meetings.length}</p>
                 </div>
                 <div className="mt-3 flex gap-2">
                   <a
-                    href={`${backendUrl}/health`}
+                    href={`${config.apiUrl}${config.endpoints.health}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-xs bg-yellow-200 hover:bg-yellow-300 px-3 py-2 rounded"
@@ -171,7 +184,7 @@ export default function Dashboard() {
                     Test Health Endpoint
                   </a>
                   <a
-                    href={`${backendUrl}/get-meetings`}
+                    href={`${config.apiUrl}${config.endpoints.meetings}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-xs bg-yellow-200 hover:bg-yellow-300 px-3 py-2 rounded"
@@ -186,8 +199,10 @@ export default function Dashboard() {
       </div>
 
       {/* Chat Sidebar - Fixed position */}
-      <div className="w-80 bg-white border-l border-gray-200 flex-shrink-0">
-        <ChatSection />
+      <div className="w-80 bg-white border-l border-gray-200 flex-shrink-0 h-full">
+        <div className="h-full p-4">
+          <ChatSection />
+        </div>
       </div>
     </div>
   );

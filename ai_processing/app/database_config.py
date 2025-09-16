@@ -53,6 +53,30 @@ class DatabaseConfig:
     @staticmethod
     def _get_tidb_config_from_env() -> Dict[str, Any]:
         """Get TiDB configuration from environment variables"""
+        # Check for unified connection string first
+        connection_string = os.getenv('TIDB_CONNECTION_STRING')
+        if connection_string:
+            # Parse connection string: mysql://user:password@host:port/database
+            try:
+                import re
+                match = re.match(r'mysql://([^:]+):([^@]+)@([^:]+):(\d+)/(.+)', connection_string)
+                if match:
+                    user, password, host, port, database = match.groups()
+                    return {
+                        "type": "tidb",
+                        "connection": {
+                            "host": host,
+                            "port": int(port),
+                            "user": user,
+                            "password": password,
+                            "database": database,
+                            "ssl_mode": "REQUIRED"
+                        }
+                    }
+            except Exception as e:
+                logger.error(f"Failed to parse TIDB_CONNECTION_STRING: {e}")
+        
+        # Fallback to individual environment variables
         config = {
             "type": "tidb",
             "connection": {

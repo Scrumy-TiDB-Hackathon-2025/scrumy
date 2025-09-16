@@ -11,7 +11,7 @@ import os
 from typing import Dict, List
 from datetime import datetime
 import logging
-from .status_adapter import StatusAdapter
+from .retry_manager import retry_manager
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,6 @@ class NotionIntegration:
         self.database_id = database_id or os.getenv("NOTION_DATABASE_ID")
         self.base_url = "https://api.notion.com/v1"
         self.is_mock = not self.token or self.token == "mock_token_for_dev"
-        self._assignee_cache = set()  # Cache for known assignee options
 
     def _validate_task_data(self, task: Dict) -> Dict:
         """Validate task data according to Notion API requirements"""
@@ -39,13 +38,7 @@ class NotionIntegration:
         if task.get("priority") and task["priority"] not in ["low", "medium", "high", "urgent"]:
             errors.append("Priority must be one of: low, medium, high, urgent")
 
-        # Validate due date format
-        if task.get("due_date"):
-            try:
-                from datetime import datetime
-                datetime.fromisoformat(task["due_date"])
-            except ValueError:
-                errors.append("Invalid due_date format. Use YYYY-MM-DD")
+        # Due date validation removed - not available in database schema
 
         # Validate description length
         if task.get("description") and len(task["description"]) > 2000:
@@ -90,92 +83,10 @@ class NotionIntegration:
             "retryable": status_code in [429, 500, 502, 503, 504]
         }
 
-    async def _get_database_properties(self) -> Dict:
-        """Get current database properties including assignee options"""
-        headers = {
-            "Authorization": f"Bearer {self.token}",
-            "Notion-Version": "2022-06-28"
-        }
-
-        try:
-            timeout = aiohttp.ClientTimeout(total=10)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(f"{self.base_url}/databases/{self.database_id}", headers=headers) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        return data.get('properties', {})
-                    else:
-                        logger.error(f"Failed to get database properties: {response.status}")
-                        return {}
-        except Exception as e:
-            logger.error(f"Error getting database properties: {str(e)}")
-            return {}
-
-    async def _add_assignee_option(self, assignee_name: str) -> bool:
-        """Add new assignee option to the Assignee select property"""
-        if assignee_name in self._assignee_cache:
-            return True
-
-        # Get current database properties
-        properties = await self._get_database_properties()
-        assignee_prop = properties.get('Assignee', {})
-
-        if assignee_prop.get('type') != 'select':
-            logger.warning("Assignee property is not a select type, cannot add option")
-            return False
-
-        # Get existing options
-        existing_options = assignee_prop.get('select', {}).get('options', [])
-        existing_names = {opt.get('name') for opt in existing_options}
-
-        # Check if option already exists
-        if assignee_name in existing_names:
-            self._assignee_cache.add(assignee_name)
-            return True
-
-        # Add new option
-        new_options = existing_options + [{"name": assignee_name}]
-
-        headers = {
-            "Authorization": f"Bearer {self.token}",
-            "Notion-Version": "2022-06-28",
-            "Content-Type": "application/json"
-        }
-
-        payload = {
-            "properties": {
-                "Assignee": {
-                    "select": {
-                        "options": new_options
-                    }
-                }
-            }
-        }
-
-        try:
-            timeout = aiohttp.ClientTimeout(total=15)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.patch(f"{self.base_url}/databases/{self.database_id}", headers=headers, json=payload) as response:
-                    if response.status == 200:
-                        logger.info(f"Successfully added assignee option: {assignee_name}")
-                        self._assignee_cache.add(assignee_name)
-                        return True
-                    else:
-                        error_data = await response.json()
-                        logger.error(f"Failed to add assignee option: {error_data}")
-                        return False
-        except Exception as e:
-            logger.error(f"Error adding assignee option {assignee_name}: {str(e)}")
-            return False
-
     async def create_task(self, task: Dict) -> Dict:
         """Create task in Notion with simplified, working implementation"""
         if self.is_mock:
             return self._create_mock_task(task)
-
-        # Default to ScrumAi for system tasks if no assignee specified
-        if not task.get("assignee"):
-            task["assignee"] = "ScrumAi"
 
         # Validate input data
         validation = self._validate_task_data(task)
@@ -206,8 +117,16 @@ class NotionIntegration:
             }
 
         if task.get("priority"):
+            # Map priority values to match database options
+            priority_mapping = {
+                "low": "Low",
+                "medium": "Medium",
+                "high": "High",
+                "urgent": "High"  # Map urgent to High since that's what's available
+            }
+            priority_value = priority_mapping.get(task["priority"].lower(), "Medium")
             properties["Priority"] = {
-                "select": {"name": task["priority"].capitalize()}
+                "select": {"name": priority_value}
             }
 
         # Always set initial status
@@ -216,17 +135,24 @@ class NotionIntegration:
         }
 
         if task.get("assignee"):
-            assignee_name = task["assignee"]
-            # Simple assignee handling - just add to properties
+            # Use the assignee name directly - Notion will create the option if it doesn't exist
+            # Clean up the assignee name for consistency
+            assignee_name = task["assignee"].strip()
+
+            # Apply some basic formatting for common cases
+            if assignee_name.lower() in ["scrumbot", "scrumai", "ai"]:
+                assignee_name = "ScrumAI"
+            elif assignee_name.lower() == "test user":
+                assignee_name = "Test User"
+            else:
+                # Use the original name, properly capitalized
+                assignee_name = " ".join(word.capitalize() for word in assignee_name.split())
+
             properties["Assignee"] = {
                 "select": {"name": assignee_name}
             }
 
-        # Note: Due Date property removed as it doesn't exist in the current database schema
-        # if task.get("due_date"):
-        #     properties["Due Date"] = {
-        #         "date": {"start": task["due_date"]}
-        #     }
+        # Due Date and Meeting ID properties not available in database schema - removed
 
         payload = {
             "parent": {"database_id": self.database_id},
@@ -256,33 +182,6 @@ class NotionIntegration:
                             error_data = await response.json()
                         except:
                             error_data = {"code": "unknown_error", "message": await response.text()}
-
-                        # If it's an assignee-related error, try to add the assignee and retry once
-                        if (response.status == 400 and
-                            error_data.get("code") == "validation_error" and
-                            task.get("assignee") and
-                            ("assignee" in str(error_data).lower() or "select" in str(error_data).lower())):
-
-                            logger.info(f"Attempting to add missing assignee option: {task['assignee']}")
-                            if await self._add_assignee_option(task["assignee"]):
-                                # Retry the request once
-                                async with session.post(
-                                    f"{self.base_url}/pages",
-                                    headers=headers,
-                                    json=payload
-                                ) as retry_response:
-                                    if retry_response.status == 200:
-                                        retry_result = await retry_response.json()
-                                        logger.info(f"Successfully created task after adding assignee option")
-                                        return {
-                                            "success": True,
-                                            "notion_page_id": retry_result["id"],
-                                            "notion_url": retry_result["url"],
-                                            "task_id": retry_result["id"],
-                                            "task_url": retry_result["url"],
-                                            "task": task,
-                                            "assignee_auto_added": True
-                                        }
 
                         return self._handle_notion_error(response.status, error_data)
 
@@ -584,15 +483,14 @@ class ClickUpIntegration:
             "Content-Type": "application/json"
         }
 
-        # Use status adapter for proper status mapping
-        clickup_status = StatusAdapter.to_clickup_status(task.get("status", "not_started"))
-        clickup_priority = StatusAdapter.to_clickup_priority(task.get("priority", "medium"))
+        # Map priority levels (ClickUp: 1=urgent, 2=high, 3=normal, 4=low)
+        priority_map = {"urgent": 1, "high": 2, "medium": 3, "low": 4}
 
         payload = {
             "name": task["title"][:255],  # ClickUp title limit
             "description": task.get("description", "")[:8000],  # ClickUp description limit
-            "priority": clickup_priority,
-            "status": clickup_status,
+            "priority": priority_map.get(task.get("priority", "medium"), 3),
+            "status": "to do",  # Use proper ClickUp status
             "tags": ["scrumbot", "ai-generated"]
         }
 
@@ -697,34 +595,38 @@ class IntegrationManager:
             logger.error(f"Failed to initialize ClickUp integration: {e}")
 
     async def create_task_all(self, task_data: Dict, max_retries: int = 2) -> Dict:
-        """Create task in all available integrations with retry logic"""
+        """Create task in all available integrations with sophisticated retry logic"""
         results = {}
 
         for name, integration in self.integrations.items():
             if hasattr(integration, 'create_task'):
-                # Try with retries for retryable errors
-                for attempt in range(max_retries + 1):
-                    try:
-                        result = await integration.create_task(task_data)
-                        results[name] = result
-                        logger.info(f"Task creation result for {name}: {result.get('success', False)}")
+                # Use sophisticated retry manager for each integration
+                logger.info(f"Creating task in {name} with retry mechanism")
 
-                        # If successful or non-retryable error, break
-                        if result.get("success") or not result.get("retryable", False):
-                            break
+                result = await retry_manager.execute_with_retry(
+                    integration.create_task,
+                    name,  # service_name for retry manager
+                    task_data
+                )
 
-                        # If retryable and not last attempt, wait and retry
-                        if attempt < max_retries:
-                            wait_time = (2 ** attempt) + 0.1  # Exponential backoff
-                            logger.info(f"Retrying {name} in {wait_time:.1f}s (attempt {attempt + 2})")
-                            await asyncio.sleep(wait_time)
+                # Handle retry manager response format
+                if result.get("success"):
+                    results[name] = result.get("result", {"success": True})
+                    logger.info(f"Task creation successful for {name}")
 
-                    except Exception as e:
-                        logger.error(f"Error creating task in {name} (attempt {attempt + 1}): {str(e)}")
-                        results[name] = {"success": False, "error": str(e)}
-
-                        # Don't retry on unexpected exceptions
-                        break
+                    # Log retry statistics if retries were used
+                    if result.get("attempts_made", 1) > 1:
+                        logger.info(f"Task in {name} succeeded after {result.get('attempts_made')} attempts")
+                else:
+                    results[name] = {
+                        "success": False,
+                        "error": result.get("error", "Unknown error"),
+                        "retryable": result.get("retries_exhausted", False)
+                    }
+                    if result.get("retries_exhausted"):
+                        logger.error(f"Task creation in {name} failed after {result.get('attempts_made')} attempts: {result.get('error')}")
+                    else:
+                        logger.error(f"Task creation in {name} failed (non-retryable): {result.get('error')}")
 
         success_count = sum(1 for r in results.values() if r.get("success", False))
 
@@ -734,7 +636,7 @@ class IntegrationManager:
             "integrations_used": list(self.integrations.keys()),
             "successful_integrations": success_count,
             "total_integrations": len(self.integrations),
-            "retry_attempts": max_retries
+            "retry_manager_used": True
         }
 
     async def send_notifications_all(self, message: str, task_data: Dict = None) -> Dict:

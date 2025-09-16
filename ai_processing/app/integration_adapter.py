@@ -507,6 +507,7 @@ async def notify_meeting_processed(meeting_id: str,
                                  summary_data: Dict,
                                  tasks_data: List[Dict],
                                  speakers_data: List[Dict],
+                                 meeting_context: Dict = None,
                                  **kwargs) -> Dict:
     """
     Convenience function to notify integration systems of processed meeting
@@ -514,19 +515,41 @@ async def notify_meeting_processed(meeting_id: str,
     Returns:
         Integration response
     """
-    adapter = get_integration_adapter()
-    return await adapter.process_meeting_complete(
-        meeting_id=meeting_id,
-        meeting_title=meeting_title,
-        platform=platform,
-        participants=participants,
-        participant_count=participant_count,
-        transcript=transcript,
-        summary_data=summary_data,
-        tasks_data=tasks_data,
-        speakers_data=speakers_data,
-        **kwargs
-    )
+    # Use integration bridge if meeting context contains pipeline logger
+    if meeting_context and meeting_context.get('pipeline_logger'):
+        from .integration_bridge import create_integration_bridge
+        bridge = create_integration_bridge()
+        
+        # Extract tasks for integration bridge
+        tasks_list = tasks_data.get('tasks', []) if isinstance(tasks_data, dict) else tasks_data
+        
+        result = await bridge.create_tasks_from_ai_results(
+            tasks_list, 
+            meeting_context
+        )
+        
+        return {
+            "success": result.get("tasks_created", 0) > 0,
+            "integration_id": meeting_id,
+            "tools_executed": result.get("successful_integrations", []),
+            "tasks_created": result.get("tasks_created", 0),
+            "task_urls": result.get("task_urls", {})
+        }
+    else:
+        # Fallback to original adapter
+        adapter = get_integration_adapter()
+        return await adapter.process_meeting_complete(
+            meeting_id=meeting_id,
+            meeting_title=meeting_title,
+            platform=platform,
+            participants=participants,
+            participant_count=participant_count,
+            transcript=transcript,
+            summary_data=summary_data,
+            tasks_data=tasks_data,
+            speakers_data=speakers_data,
+            **kwargs
+        )
 
 
 async def create_external_tasks(meeting_id: str,

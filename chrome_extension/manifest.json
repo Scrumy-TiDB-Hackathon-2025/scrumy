@@ -3,13 +3,7 @@
   "name": "ScrumBot Meeting Recorder",
   "version": "1.0",
   "description": "AI-powered meeting transcription for TiDB AgentX Hackathon 2025",
-  "permissions": [
-    "activeTab",
-    "scripting",
-    "tabs",
-    "storage",
-    "tabCapture"
-  ],
+  "permissions": ["activeTab", "scripting", "tabs", "storage", "tabCapture"],
   "host_permissions": [
     "https://meet.google.com/*",
     "https://zoom.us/*",
@@ -26,16 +20,16 @@
       ],
       "js": [
         "config.js",
+        "content.js",
         "ui-components.js",
         "core/meetingdetector.js",
         "core/audiocapture.js",
         "services/websocketclient.js",
         "core/scrumbotcontroller.js",
-        "content.js",
         "test-controller.js",
         "test-multitab.js"
       ],
-      "run_at": "document_idle" 
+      "run_at": "document_idle"
     }
   ],
   "background": {
@@ -51,7 +45,9 @@
         "config.js",
         "capture.html",
         "capture.js",
+        "test-audio-direct.html",
         "core/audiocapture.js",
+        "core/audiocapture-test.js",
         "services/websocketclient.js"
       ],
       "matches": ["<all_urls>"]

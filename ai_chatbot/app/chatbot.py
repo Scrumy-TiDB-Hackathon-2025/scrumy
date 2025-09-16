@@ -22,7 +22,7 @@ class ChatBot:
         
         # Initialize sentence transformer for embeddings
         self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-        self.similarity_threshold = 0.7
+        self.similarity_threshold = 0.4  # Lowered from 0.7 for better meeting data retrieval
         
     async def process_message(self, 
                             message: str, 
@@ -32,6 +32,9 @@ class ChatBot:
         if not session_id:
             session_id = str(uuid.uuid4())
 
+        # Initialize variables
+        similar_docs = []
+        
         # Check if we need to call other endpoints
         if self._requires_meeting_processing(message):
             try:
@@ -45,7 +48,7 @@ class ChatBot:
             query_embedding = self.embedding_model.encode(message).tolist()
             
             # Get relevant context from vector store
-            similar_docs = await self.vector_store.similarity_search(query_embedding, top_k=3)
+            similar_docs = await self.vector_store.similarity_search(query_embedding, top_k=5)
             
             # Get chat history for conversation context
             history = self.vector_store.get_chat_history(session_id, limit=5)
@@ -73,32 +76,71 @@ class ChatBot:
 
     def _requires_meeting_processing(self, message: str) -> bool:
         """Check if message requires calling meeting processing endpoints"""
-        keywords = ['meeting', 'transcript', 'summary', 'recording']
-        return any(keyword in message.lower() for keyword in keywords)
+        # Check for comprehensive meeting data queries
+        meeting_keywords = ['meetings do i have', 'what meetings', 'list meetings', 'all meetings', 'meeting data']
+        return any(keyword in message.lower() for keyword in meeting_keywords)
 
     async def _call_meeting_endpoint(self, message: str) -> Dict:
-        """Call appropriate meeting processing endpoint"""
+        """Call comprehensive meeting data endpoint"""
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "http://localhost:5167/process-complete-meeting",
-                json={
-                    "text": message,
-                    "model": "groq",
-                    "model_name": self.model_name,
-                    "meeting_id": str(uuid.uuid4())
-                }
-            )
+            response = await client.get("http://localhost:8001/meetings/comprehensive")
             return response.json()
 
     def _format_meeting_response(self, meeting_data: Dict) -> str:
-        """Format meeting processing results into a response"""
-        if meeting_data.get("status") == "success":
-            summary = meeting_data.get("summary", {})
-            return f"""Here's what I found in the meeting:
-- Overview: {summary.get('overview', 'Not available')}
-- Key Points: {', '.join(summary.get('key_points', ['None found']))}
-- Action Items: {', '.join(summary.get('action_items', ['None found']))}"""
-        return "I couldn't process the meeting data properly."
+        """Format comprehensive meeting data into a response"""
+        if meeting_data.get("status") != "success":
+            return "I couldn't retrieve the meeting data properly."
+        
+        data = meeting_data.get("data", {})
+        meetings = data.get("meetings", [])
+        tasks = data.get("tasks", [])
+        summary = data.get("summary", {})
+        
+        response_parts = []
+        
+        # Meeting Overview
+        response_parts.append("**Meeting Overview**")
+        response_parts.append(f"I have data for {summary.get('total_meetings', 0)} meetings:")
+        response_parts.append("")
+        
+        for meeting in meetings:
+            response_parts.append(f"• **{meeting['id']}**")
+            response_parts.append(f"  - Title: {meeting['title']}")
+            response_parts.append(f"  - Platform: {meeting['platform']}")
+            response_parts.append(f"  - Date: {meeting['created_at']}")
+            response_parts.append(f"  - Tasks: {meeting['task_count']} tasks")
+            if meeting['task_titles'] != "No tasks":
+                response_parts.append(f"  - Task Summary: {meeting['task_titles']}")
+            response_parts.append("")
+        
+        # Task Summary
+        response_parts.append("**Task Summary**")
+        response_parts.append(f"Total Tasks: {summary.get('total_tasks', 0)}")
+        response_parts.append("")
+        
+        # Group tasks by assignee
+        assignee_tasks = {}
+        for task in tasks:
+            assignee = task.get('assignee', 'Unassigned')
+            if assignee not in assignee_tasks:
+                assignee_tasks[assignee] = []
+            assignee_tasks[assignee].append(task)
+        
+        for assignee, assignee_task_list in assignee_tasks.items():
+            response_parts.append(f"**{assignee}** ({len(assignee_task_list)} tasks):")
+            for task in assignee_task_list[:3]:  # Show first 3 tasks per assignee
+                response_parts.append(f"  - {task['title']} (Priority: {task['priority']}, Status: {task['status']})")
+            if len(assignee_task_list) > 3:
+                response_parts.append(f"  - ... and {len(assignee_task_list) - 3} more tasks")
+            response_parts.append("")
+        
+        # Data Completeness
+        response_parts.append("**Data Completeness**")
+        response_parts.append(f"- Meetings: {summary.get('total_meetings', 0)}")
+        response_parts.append(f"- Tasks: {summary.get('total_tasks', 0)}")
+        response_parts.append(f"- Transcripts: {summary.get('total_transcripts', 0)} transcript segments")
+        
+        return "\n".join(response_parts)
 
     def _format_history(self, history: List[Dict]) -> List[Dict[str, str]]:
         """Format chat history for context"""
@@ -120,10 +162,19 @@ class ChatBot:
             return ""
         
         context_parts = []
-        for doc in relevant_docs[:3]:
+        for doc in relevant_docs[:5]:  # Increased from 3 to 5
             metadata = doc.get('metadata', {})
-            if metadata.get('type') == 'meeting_transcript':
-                context_parts.append(f"Meeting Context ({metadata.get('timestamp', 'Unknown date')}):\n"
+            doc_type = metadata.get('type', 'general')
+            
+            if doc_type == 'meeting_summary':
+                meeting_id = metadata.get('meeting_id', 'Unknown')
+                context_parts.append(f"Meeting {meeting_id}: {doc['text']}")
+            elif doc_type == 'task':
+                assignee = metadata.get('assignee', 'Unassigned')
+                meeting_id = metadata.get('meeting_id', 'Unknown')
+                context_parts.append(f"Task from meeting {meeting_id}: {doc['text']} (Assigned to: {assignee})")
+            elif doc_type == 'meeting_transcript':
+                context_parts.append(f"Meeting Transcript ({metadata.get('timestamp', 'Unknown date')}):\n"
                                    f"Summary: {metadata.get('summary', 'Not available')}\n"
                                    f"Content: {doc['text']}")
             else:
@@ -148,24 +199,37 @@ class ChatBot:
             relevant_docs = [doc for doc in similar_docs if doc.get('similarity', 0) > self.similarity_threshold]
             knowledge_context = self._format_knowledge_context(relevant_docs)
             
-            system_prompt = """You are Scrumy, an AI-powered project management assistant. 
-Format your responses as follows:
+            system_prompt = """You are Scrumy, an AI-powered project management assistant with comprehensive access to meeting data, tasks, transcripts, and project information.
 
-**Analysis of Available Data**
+When asked about "What meetings do I have data for?" or similar queries, provide a COMPLETE overview including:
 
-[Provide a clear, concise analysis of the relevant information from the knowledge base]
+**Meeting Overview**
+- List ALL meetings with their IDs, titles, platforms, and dates
+- Include task counts and brief task summaries for each meeting
+- Show meeting status and any available transcript information
 
-**Key Points**
-- [List key points extracted from the data]
-- [Include only information that directly answers the user's question]
+**Task Summary**
+- Total number of tasks across all meetings
+- Breakdown by meeting, assignee, priority, and status
+- Highlight any overdue or high-priority items
 
-**Additional Context**
-[If applicable, provide relevant project management context]
+**Data Completeness**
+- Specify what types of data are available (transcripts, summaries, tasks)
+- Note any meetings with missing information
+- Provide context about data quality and completeness
 
-If the data doesn't contain information relevant to the question, clearly state:
-"I don't have enough information in the available data to answer this question accurately."
+For specific meeting queries, be detailed about:
+- Meeting IDs, dates, and platforms
+- All participants and their roles
+- Complete task assignments with assignees, priorities, and due dates
+- Transcript excerpts when relevant
+- Action items and follow-up requirements
 
-Be concise and professional. Never mention source numbers or irrelevant information."""
+Always structure responses clearly with headers and bullet points. Be comprehensive rather than brief when listing available data.
+
+If no relevant data is found, clearly state: "I don't have access to meeting data matching your query. The available data includes [list what is available]."
+
+Prioritize completeness and accuracy in data presentation."""
 
             messages = [
                 {"role": "system", "content": system_prompt},

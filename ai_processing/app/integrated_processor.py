@@ -4,11 +4,15 @@ from app.ai_processor import AIProcessor
 from app.speaker_identifier import SpeakerIdentifier
 from app.meeting_summarizer import MeetingSummarizer
 from app.task_extractor import TaskExtractor
+from app.integration_bridge import create_integration_bridge, DEFAULT_INTEGRATION_CONFIG
 from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 class IntegratedAIProcessor:
 
-    def __init__(self):
+    def __init__(self, integration_config: Dict = None):
 
         self.ai_processor = AIProcessor()
 
@@ -17,12 +21,18 @@ class IntegratedAIProcessor:
         self.meeting_summarizer = MeetingSummarizer(self.ai_processor)
 
         self.task_extractor = TaskExtractor(self.ai_processor)
+        
+        # Initialize integration bridge
+        config = integration_config or DEFAULT_INTEGRATION_CONFIG
+        self.integration_bridge = create_integration_bridge(config)
+        
+        logger.info(f"IntegratedAIProcessor initialized with integration {'enabled' if self.integration_bridge.enabled else 'disabled'}")
 
     
 
     async def process_complete_meeting(self, transcript: str, meeting_context: Dict = None) -> Dict:
 
-        """Process a complete meeting with all AI features"""
+        """Process a complete meeting with all AI features and create tasks via integrations"""
 
         
 
@@ -34,7 +44,7 @@ class IntegratedAIProcessor:
 
         try:
 
-            # Run all processing in parallel for efficiency
+            # Run all AI processing in parallel for efficiency
 
             tasks = [
 
@@ -52,7 +62,27 @@ class IntegratedAIProcessor:
 
             
 
-            return {
+            # Process integrations if tasks were extracted
+            integration_results = None
+            if tasks_result and isinstance(tasks_result, dict) and tasks_result.get("tasks"):
+                logger.info(f"Processing {len(tasks_result['tasks'])} tasks for integration")
+                integration_results = await self.integration_bridge.create_tasks_from_ai_results(
+                    ai_tasks=tasks_result["tasks"],
+                    meeting_context=meeting_context
+                )
+            else:
+                logger.info("No tasks extracted, skipping integration")
+                integration_results = {
+                    "integration_enabled": self.integration_bridge.enabled,
+                    "tasks_processed": 0,
+                    "tasks_created": 0,
+                    "reason": "No tasks extracted from meeting"
+                }
+
+            
+
+            # Build comprehensive response
+            response = {
 
                 "status": "success",
 
@@ -68,6 +98,8 @@ class IntegratedAIProcessor:
 
                 },
 
+                "integration_results": integration_results,
+
                 "metadata": {
 
                     "transcript_length": len(transcript),
@@ -76,16 +108,29 @@ class IntegratedAIProcessor:
 
                     "ai_model": self.ai_processor.model,
 
-                    "processed_at": datetime.now().isoformat()
+                    "processed_at": datetime.now().isoformat(),
+
+                    "integration_enabled": self.integration_bridge.enabled
 
                 }
 
             }
+            
+            # Send meeting summary notification if enabled
+            if integration_results and integration_results.get("tasks_created", 0) > 0:
+                summary_text = summary_result.get("executive_summary", "") if isinstance(summary_result, dict) else str(summary_result)
+                await self.integration_bridge.send_meeting_summary_notification(
+                    meeting_summary=summary_text,
+                    tasks_created=integration_results["tasks_created"],
+                    meeting_context=meeting_context
+                )
+            
+            return response
 
             
 
         except Exception as e:
-
+            logger.error(f"Error in process_complete_meeting: {e}")
             return {
 
                 "status": "error",
@@ -94,6 +139,11 @@ class IntegratedAIProcessor:
 
                 "meeting_id": meeting_context.get("meeting_id", "unknown"),
 
-                "processing_results": None
+                "processing_results": None,
+                
+                "integration_results": {
+                    "integration_enabled": False,
+                    "error": "Processing failed before integration"
+                }
 
             }

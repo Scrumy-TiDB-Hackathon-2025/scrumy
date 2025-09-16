@@ -1,115 +1,51 @@
 {
   "summary": {
-    "total": 13,
-    "passed": 13,
+    "total": 5,
+    "passed": 5,
     "failed": 0,
     "skipped": 0,
     "exit_status": 0,
-    "timestamp": "2025-08-29T02:49:01.263401"
+    "timestamp": "2025-09-14T16:18:31.952866"
   },
   "tests": [
     {
-      "test": "test_health_check",
+      "test": "test_session_cleanup_scheduling",
       "outcome": "PASSED",
-      "nodeid": "tests/test_endpoints.py::test_health_check",
-      "time": "2025-08-29T02:48:19.628893",
-      "duration": 0.09586601000046358,
+      "nodeid": "tests/test_session_cleanup_simple.py::test_session_cleanup_scheduling",
+      "time": "2025-09-14T16:18:31.925690",
+      "duration": 0.0020595421083271503,
       "longrepr": null
     },
     {
-      "test": "test_save_and_get_meeting",
+      "test": "test_recording_status_active",
       "outcome": "PASSED",
-      "nodeid": "tests/test_endpoints.py::test_save_and_get_meeting",
-      "time": "2025-08-29T02:48:19.669747",
-      "duration": 0.035258996998891234,
+      "nodeid": "tests/test_session_cleanup_simple.py::test_recording_status_active",
+      "time": "2025-09-14T16:18:31.934804",
+      "duration": 0.0037403751630336046,
       "longrepr": null
     },
     {
-      "test": "test_save_meeting_title_and_delete",
+      "test": "test_recording_status_disconnected_grace_period",
       "outcome": "PASSED",
-      "nodeid": "tests/test_endpoints.py::test_save_meeting_title_and_delete",
-      "time": "2025-08-29T02:48:19.715274",
-      "duration": 0.040772509993985295,
+      "nodeid": "tests/test_session_cleanup_simple.py::test_recording_status_disconnected_grace_period",
+      "time": "2025-09-14T16:18:31.941280",
+      "duration": 0.0009089589584618807,
       "longrepr": null
     },
     {
-      "test": "test_process_transcript_api",
+      "test": "test_recording_status_old_disconnected",
       "outcome": "PASSED",
-      "nodeid": "tests/test_endpoints.py::test_process_transcript_api",
-      "time": "2025-08-29T02:48:19.745218",
-      "duration": 0.02510325500043109,
+      "nodeid": "tests/test_session_cleanup_simple.py::test_recording_status_old_disconnected",
+      "time": "2025-09-14T16:18:31.945697",
+      "duration": 0.0010701250284910202,
       "longrepr": null
     },
     {
-      "test": "test_get_summary_not_found",
+      "test": "test_multiple_connections_no_cleanup",
       "outcome": "PASSED",
-      "nodeid": "tests/test_endpoints.py::test_get_summary_not_found",
-      "time": "2025-08-29T02:48:19.755082",
-      "duration": 0.002949572997749783,
-      "longrepr": null
-    },
-    {
-      "test": "test_model_config_roundtrip",
-      "outcome": "PASSED",
-      "nodeid": "tests/test_endpoints.py::test_model_config_roundtrip",
-      "time": "2025-08-29T02:48:19.770121",
-      "duration": 0.009592978996806778,
-      "longrepr": null
-    },
-    {
-      "test": "test_get_api_key",
-      "outcome": "PASSED",
-      "nodeid": "tests/test_endpoints.py::test_get_api_key",
-      "time": "2025-08-29T02:48:19.778699",
-      "duration": 0.003293800007668324,
-      "longrepr": null
-    },
-    {
-      "test": "test_process_complete_meeting",
-      "outcome": "PASSED",
-      "nodeid": "tests/test_endpoints.py::test_process_complete_meeting",
-      "time": "2025-08-29T02:48:33.828603",
-      "duration": 14.044063477995223,
-      "longrepr": null
-    },
-    {
-      "test": "test_transcribe_endpoint_with_temp_file",
-      "outcome": "PASSED",
-      "nodeid": "tests/test_endpoints.py::test_transcribe_endpoint_with_temp_file",
-      "time": "2025-08-29T02:48:39.923382",
-      "duration": 6.083338000011281,
-      "longrepr": null
-    },
-    {
-      "test": "test_transcribe_with_real_audio",
-      "outcome": "PASSED",
-      "nodeid": "tests/test_endpoints.py::test_transcribe_with_real_audio",
-      "time": "2025-08-29T02:48:43.556099",
-      "duration": 3.6247555050067604,
-      "longrepr": null
-    },
-    {
-      "test": "test_transcribe_with_audio_robust",
-      "outcome": "PASSED",
-      "nodeid": "tests/test_endpoints.py::test_transcribe_with_audio_robust",
-      "time": "2025-08-29T02:48:48.299827",
-      "duration": 4.734698075000779,
-      "longrepr": null
-    },
-    {
-      "test": "test_transcribe_with_real_audio_diagnostic",
-      "outcome": "PASSED",
-      "nodeid": "tests/test_endpoints.py::test_transcribe_with_real_audio_diagnostic",
-      "time": "2025-08-29T02:49:00.494938",
-      "duration": 12.184047029004432,
-      "longrepr": null
-    },
-    {
-      "test": "test_speaker_identifier_explicit_and_ai",
-      "outcome": "PASSED",
-      "nodeid": "tests/test_endpoints.py::test_speaker_identifier_explicit_and_ai",
-      "time": "2025-08-29T02:49:01.252073",
-      "duration": 0.7331647259998135,
+      "nodeid": "tests/test_session_cleanup_simple.py::test_multiple_connections_no_cleanup",
+      "time": "2025-09-14T16:18:31.949905",
+      "duration": 0.001215917058289051,
       "longrepr": null
     }
   ]
