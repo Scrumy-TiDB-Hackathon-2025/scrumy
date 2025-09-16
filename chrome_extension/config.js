@@ -8,6 +8,7 @@ const CONFIGS = {
     // Development - Mock servers for testing
     BACKEND_URL: 'http://localhost:5167', // Mock REST API server
     WEBSOCKET_URL: 'ws://localhost:8080/ws', // Mock WebSocket server
+    CHATBOT_URL: 'http://localhost:8001', // AI Chatbot server
     FRONTEND_URL: 'http://localhost:3000', // Local frontend or use prod
 
     // Mock API Endpoints
@@ -36,6 +37,7 @@ const CONFIGS = {
     // Production - Real backend services
     BACKEND_URL: 'https://eb5bb66e5df1.ngrok-free.app',
     WEBSOCKET_URL: 'wss://83465f8996cc.ngrok-free.app/ws',
+    CHATBOT_URL: 'https://your-chatbot-url.ngrok-free.app',
     FRONTEND_URL: 'https://scrumy.vercel.app',
 
     // Production API Endpoints

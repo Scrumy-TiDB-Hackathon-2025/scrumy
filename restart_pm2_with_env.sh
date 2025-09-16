@@ -45,8 +45,8 @@ fi
 
 # Stop existing processes
 echo "⏹️  Stopping existing processes..."
-pm2 stop scrumbot-backend scrumbot-websocket 2>/dev/null || true
-pm2 delete scrumbot-backend scrumbot-websocket 2>/dev/null || true
+pm2 stop scrumbot-backend scrumbot-websocket scrumbot-chatbot 2>/dev/null || true
+pm2 delete scrumbot-backend scrumbot-websocket scrumbot-chatbot 2>/dev/null || true
 
 # Navigate to ai_processing directory
 cd "$AI_PROCESSING_DIR"
@@ -71,6 +71,15 @@ module.exports = {
       env: {
         GROQ_API_KEY: '$GROQ_API_KEY'
       }
+    },
+    {
+      name: 'scrumbot-chatbot',
+      script: 'run_server.py',
+      interpreter: 'python',
+      cwd: '../ai_chatbot',
+      env: {
+        GROQ_API_KEY: '$GROQ_API_KEY'
+      }
     }
   ]
 };
@@ -89,3 +98,4 @@ echo "📊 Check status:"
 echo "  pm2 status"
 echo "  pm2 logs scrumbot-backend --lines 5"
 echo "  pm2 logs scrumbot-websocket --lines 5"
+echo "  pm2 logs scrumbot-chatbot --lines 5"

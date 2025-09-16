@@ -49,8 +49,8 @@ echo "✅ Environment variables loaded"
 # Stop existing processes
 echo ""
 echo "⏹️ Stopping existing processes..."
-pm2 stop scrumbot-backend scrumbot-websocket 2>/dev/null || true
-pm2 delete scrumbot-backend scrumbot-websocket 2>/dev/null || true
+pm2 stop scrumbot-backend scrumbot-websocket scrumbot-chatbot 2>/dev/null || true
+pm2 delete scrumbot-backend scrumbot-websocket scrumbot-chatbot 2>/dev/null || true
 
 # Navigate to ai_processing directory
 cd "$AI_PROCESSING_DIR"
@@ -60,6 +60,12 @@ echo ""
 echo "🚀 Starting PM2 processes..."
 pm2 start --name scrumbot-backend --interpreter venv/bin/python start_backend.py --update-env
 pm2 start --name scrumbot-websocket --interpreter venv/bin/python start_websocket_server.py --update-env
+
+# Start AI Chatbot
+echo "🤖 Starting AI Chatbot..."
+cd ../ai_chatbot
+pm2 start --name scrumbot-chatbot --interpreter python run_server.py --update-env
+cd ../ai_processing
 
 # Save PM2 configuration
 echo ""
@@ -84,6 +90,12 @@ else
     echo "   ❌ scrumbot-websocket: FAILED"
 fi
 
+if pm2 list | grep -q "scrumbot-chatbot.*online"; then
+    echo "   ✅ scrumbot-chatbot: ONLINE"
+else
+    echo "   ❌ scrumbot-chatbot: FAILED"
+fi
+
 echo ""
 echo "✅ PM2 processes restarted with environment!"
 echo ""
@@ -94,11 +106,13 @@ echo ""
 echo "🧪 Test endpoints:"
 echo "   Backend:   curl http://localhost:5167/health"
 echo "   WebSocket: curl http://localhost:8080/health"
+echo "   Chatbot:   curl http://localhost:8001/health"
 echo ""
 echo "📋 Monitor commands:"
 echo "   pm2 status                            # Process status"
 echo "   pm2 logs scrumbot-backend --lines 5   # Backend logs"
 echo "   pm2 logs scrumbot-websocket --lines 5 # WebSocket logs"
+echo "   pm2 logs scrumbot-chatbot --lines 5   # Chatbot logs"
 echo "   pm2 monit                             # Real-time monitoring"
 echo ""
 echo "🔧 If issues persist:"

@@ -24,6 +24,12 @@ echo "🚀 Starting PM2 processes..."
 pm2 start --name scrumbot-backend --interpreter venv/bin/python start_backend.py --update-env
 pm2 start --name scrumbot-websocket --interpreter venv/bin/python start_websocket_server.py --update-env
 
+# Start AI Chatbot
+echo "🤖 Starting AI Chatbot..."
+cd ../ai_chatbot
+pm2 start --name scrumbot-chatbot --interpreter python run_server.py --update-env
+cd ../ai_processing
+
 # Save PM2 configuration
 pm2 save
 
@@ -35,8 +41,10 @@ echo ""
 echo "🧪 Test services before ngrok:"
 echo "  curl http://localhost:5167/health  # Backend API"
 echo "  curl http://localhost:8080/health  # WebSocket server"
+echo "  curl http://localhost:8001/health  # AI Chatbot"
 echo "  netstat -tlnp | grep :5167        # Check backend port"
 echo "  netstat -tlnp | grep :8080        # Check websocket port"
+echo "  netstat -tlnp | grep :8001        # Check chatbot port"
 echo ""
 echo "📊 PM2 Commands:"
 echo "  pm2 status          - View process status"
