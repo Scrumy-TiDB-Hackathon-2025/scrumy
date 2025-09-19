@@ -55,9 +55,25 @@ async def process_transcript_with_tools(request: TranscriptWithToolsRequest):
 @router.get("/tools/available")
 async def get_available_tools():
     """Get list of available tools for the agent"""
-    from .tools import tools
+    # Return available AI processing tools
     return {
-        "tools": tools.get_tools_schema(),
-        "tool_names": tools.list_tools(),
-        "count": len(tools.tools)
+        "tools": [
+            {
+                "name": "identify_speakers",
+                "description": "Identify speakers in meeting transcript",
+                "parameters": ["text", "context"]
+            },
+            {
+                "name": "extract_tasks",
+                "description": "Extract action items and tasks",
+                "parameters": ["transcript", "meeting_context"]
+            },
+            {
+                "name": "generate_summary",
+                "description": "Generate comprehensive meeting summary",
+                "parameters": ["transcript", "meeting_title"]
+            }
+        ],
+        "tool_names": ["identify_speakers", "extract_tasks", "generate_summary"],
+        "count": 3
     }

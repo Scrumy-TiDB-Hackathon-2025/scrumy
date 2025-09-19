@@ -1,0 +1,14 @@
+{
+  "env": {
+    "NEXT_PUBLIC_API_URL": "@scrumbot-api-url",
+    "NEXT_PUBLIC_WEBSOCKET_URL": "@scrumbot-websocket-url",
+    "NEXT_PUBLIC_ENV": "production"
+  },
+  "build": {
+    "env": {
+      "NEXT_PUBLIC_API_URL": "@scrumbot-api-url",
+      "NEXT_PUBLIC_WEBSOCKET_URL": "@scrumbot-websocket-url",
+      "NEXT_PUBLIC_ENV": "production"
+    }
+  }
+}
